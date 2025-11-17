@@ -164,12 +164,13 @@ and minor spelling differences, but ensure the core address components match."""
     
     def _format_address_table(self, address_table: list) -> str:
         """Format the address table as a readable string for Claude.
-        Only includes: address1, address2, MailingCity, State, ZipCode"""
+        Only includes: address1, address2, Mailing City, state, zipcode"""
         if not address_table:
             return "No addresses in table."
         
         # Only include these specific columns in the prompt
-        display_columns = ['address1', 'address2', 'MailingCity', 'State', 'ZipCode']
+        # Note: Column names must match what's returned from golden_source.py
+        display_columns = ['address1', 'address2', 'Mailing City', 'state', 'zipcode']
         
         # Create header
         header = " | ".join(display_columns)
