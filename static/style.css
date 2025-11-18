@@ -6,28 +6,77 @@
 
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background:
+        radial-gradient(circle at 25% 15%, rgba(255, 255, 255, 0.4), transparent 45%),
+        radial-gradient(circle at 80% 10%, rgba(255, 255, 255, 0.35), transparent 40%),
+        linear-gradient(135deg, #fff4e3 0%, #ffe5f0 25%, #dff8f1 55%, #d6ecff 78%, #f7e4ff 100%);
     min-height: 100vh;
     padding: 20px;
     color: #333;
+    position: relative;
+    overflow-x: hidden;
+}
+
+body::before,
+body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.6;
+}
+
+body::before {
+    background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScyMjAnIGhlaWdodD0nMjIwJyB2aWV3Qm94PScwIDAgMjIwIDIyMCcgZmlsbD0nbm9uZSc+PHBhdGggZD0nTTExMCA4MGMtOC0yNC0zMi0zMi01Mi0zMCAyMi0xMCAzOC0yMCA1Mi00MCAxNCAyMCAzMCAzMCA1MiA0MC0yMC0yLTQ0IDYtNTIgMzB6JyBmaWxsPSdyZ2JhKDE4LDg0LDcyLDAuMTMpJy8+PHBhdGggZD0nTTExMCA4MHYxMDAnIHN0cm9rZT0ncmdiYSgxOCw4NCw3MiwwLjI1KScgc3Ryb2tlLXdpZHRoPSc2JyBzdHJva2UtbGluZWNhcD0ncm91bmQnLz48cGF0aCBkPSdNMTEwIDExMGMtMTQtMTAtMzQtOC00NiAyIDE4IDIgMzIgMTIgNDYgMzAnIHN0cm9rZT0ncmdiYSgxOCw4NCw3MiwwLjI1KScgc3Ryb2tlLXdpZHRoPSc2JyBzdHJva2UtbGluZWNhcD0ncm91bmQnLz48cGF0aCBkPSdNMTEwIDExMGMxNC0xMCAzNC04IDQ2IDItMTggMi0zMiAxMi00NiAzMCcgc3Ryb2tlPSdyZ2JhKDE4LDg0LDcyLDAuMjUpJyBzdHJva2Utd2lkdGg9JzYnIHN0cm9rZS1saW5lY2FwPSdyb3VuZCcvPjwvc3ZnPg==");
+    background-repeat: repeat;
+    background-size: 320px 320px;
+    opacity: 0.45;
+    mix-blend-mode: soft-light;
+}
+
+body::after {
+    background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScyMDAnIGhlaWdodD0nMjAwJyB2aWV3Qm94PScwIDAgMjAwIDIwMCcgZmlsbD0nbm9uZSc+PHBhdGggZD0nTTExMCAxNzBoLTIwbDEwLTgweicgZmlsbD0ncmdiYSg0Niw2NCw4NywwLjI1KScvPjxwYXRoIGQ9J005MCAxNzBoMjB2MTVIOTB6JyBmaWxsPSdyZ2JhKDQ2LDY0LDg3LDAuMjUpJy8+PHBhdGggZD0nTTYzIDYwYzEzLTEyIDMyLTEyIDQ1IDAnIHN0cm9rZT0ncmdiYSg0Niw2NCw4NywwLjIpJyBzdHJva2Utd2lkdGg9JzYnIHN0cm9rZS1saW5lY2FwPSdyb3VuZCcvPjxwYXRoIGQ9J005MiA0MGMyMS0yMCA1My0yMCA3NCAwJyBzdHJva2U9J3JnYmEoNDYsNjQsODcsMC4xNiknIHN0cm9rZS13aWR0aD0nNicgc3Ryb2tlLWxpbmVjYXA9J3JvdW5kJy8+PHBhdGggZD0nTTEyNiA2MGMxMy0xMiAzMi0xMiA0NSAwJyBzdHJva2U9J3JnYmEoNDYsNjQsODcsMC4yKScgc3Ryb2tlLXdpZHRoPSc2JyBzdHJva2UtbGluZWNhcD0ncm91bmQnLz48cGF0aCBkPSdNMTM3IDQwYzIxLTIwIDUzLTIwIDc0IDAnIHN0cm9rZT0ncmdiYSg0Niw2NCw4NywwLjE2KScgc3Ryb2tlLXdpZHRoPSc2JyBzdHJva2UtbGluZWNhcD0ncm91bmQnLz48L3N2Zz4=");
+    background-repeat: repeat;
+    background-size: 380px 380px;
+    opacity: 0.35;
+    mix-blend-mode: soft-light;
 }
 
 .container {
     max-width: 1400px;
     margin: 0 auto;
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 18px;
+    box-shadow: 0 25px 70px rgba(15, 50, 69, 0.18);
     overflow: hidden;
+    position: relative;
+    z-index: 1;
+    border: 1px solid rgba(255, 255, 255, 0.4);
 }
 
 header {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, rgba(0, 176, 155, 0.85) 0%, rgba(33, 200, 195, 0.85) 30%, rgba(255, 213, 128, 0.9) 65%, rgba(255, 140, 148, 0.9) 100%);
     color: white;
     padding: 40px 30px;
     text-align: center;
+    position: relative;
+    overflow: hidden;
 }
 
+header::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cg fill='none' stroke='rgba(255,255,255,0.08)' stroke-width='3'%3E%3Cpath d='M0 80c30-10 50-40 60-60 10 20 30 50 60 60-30 10-50 40-60 60-10-20-30-50-60-60z'/%3E%3C/g%3E%3C/svg%3E") repeat;
+    opacity: 0.8;
+    pointer-events: none;
+}
+
+header > * {
+    position: relative;
+    z-index: 1;
+}
 .logo-container {
     margin-bottom: 20px;
     display: flex;
@@ -36,12 +85,17 @@ header {
 }
 
 .company-logo {
-    max-width: 200px;
-    max-height: 100px;
+    max-width: 320px;
+    max-height: 180px;
     height: auto;
     width: auto;
     object-fit: contain;
-    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.25));
+    transition: transform 0.3s ease;
+}
+
+.company-logo:hover {
+    transform: scale(1.02);
 }
 
 .company-name {
@@ -149,37 +203,43 @@ main {
 
 .submit-btn {
     width: 100%;
-    padding: 15px 30px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    border: none;
-    border-radius: 8px;
-    font-size: 1.1em;
-    font-weight: 600;
+    padding: 16px 32px;
+    background: linear-gradient(120deg, #ffb997 0%, #ffddb9 25%, #b7f8db 55%, #9ad6ff 100%);
+    color: #0b3c49;
+    border: 0;
+    border-radius: 14px;
+    font-size: 1.05em;
+    font-weight: 700;
     cursor: pointer;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    transition: transform 0.25s ease, box-shadow 0.25s ease, filter 0.25s ease;
+    box-shadow: 0 12px 30px rgba(12, 86, 107, 0.25);
+    letter-spacing: 0.4px;
 }
 
 .submit-btn:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
+    transform: translateY(-4px) scale(1.01);
+    box-shadow: 0 18px 36px rgba(12, 86, 107, 0.3);
+    filter: brightness(1.05);
 }
 
 .submit-btn:active:not(:disabled) {
-    transform: translateY(0);
+    transform: translateY(0) scale(0.99);
+    box-shadow: 0 8px 20px rgba(12, 86, 107, 0.25);
 }
 
 .submit-btn:disabled {
-    opacity: 0.7;
+    opacity: 0.6;
     cursor: not-allowed;
+    filter: grayscale(0.4);
 }
 
 .system-response-section {
-    padding: 25px;
-    background: #f8f9fa;
-    border-radius: 8px;
-    border-left: 4px solid #667eea;
+    padding: 28px;
+    background: rgba(250, 253, 255, 0.9);
+    border-radius: 16px;
+    border: 1px solid rgba(84, 184, 179, 0.25);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+    backdrop-filter: blur(4px);
     flex-shrink: 0;
 }
 
@@ -190,11 +250,12 @@ main {
 }
 
 .response-item {
-    margin-bottom: 20px;
-    padding: 15px;
-    background: white;
-    border-radius: 6px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    margin-bottom: 18px;
+    padding: 18px;
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.95), rgba(235, 251, 255, 0.9));
+    border-radius: 12px;
+    box-shadow: 0 12px 24px rgba(15, 50, 69, 0.08);
+    border: 1px solid rgba(105, 190, 194, 0.2);
 }
 
 .response-item strong {
@@ -204,8 +265,8 @@ main {
 }
 
 .response-item.reasoning {
-    background: #e7f3ff;
-    border-left: 3px solid #667eea;
+    background: linear-gradient(120deg, rgba(255, 255, 255, 0.95), rgba(255, 235, 250, 0.85));
+    border-left: 4px solid rgba(255, 176, 153, 0.8);
 }
 
 .matched-addresses-header {
@@ -264,26 +325,30 @@ main {
 }
 
 .matched-address-card {
-    background: white;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    margin-bottom: 20px;
+    background: rgba(255, 255, 255, 0.96);
+    border-radius: 18px;
+    box-shadow: 0 18px 35px rgba(23, 66, 88, 0.15);
+    margin-bottom: 26px;
     overflow: hidden;
-    border: 1px solid #e0e0e0;
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(4px);
 }
 
 .address-card-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 15px 20px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
+    padding: 20px 24px;
+    background: linear-gradient(130deg, rgba(128, 222, 234, 0.95), rgba(255, 203, 164, 0.95));
+    color: #0b3c49;
 }
 
 .address-number {
     font-weight: 700;
-    font-size: 1.1em;
+    font-size: 1.2em;
+    background: rgba(255, 255, 255, 0.75);
+    padding: 6px 14px;
+    border-radius: 999px;
 }
 
 .address-status-badge {
@@ -294,18 +359,18 @@ main {
 }
 
 .address-status-badge.success {
-    background: rgba(255, 255, 255, 0.3);
-    color: white;
+    background: rgba(11, 60, 73, 0.15);
+    color: #0b3c49;
 }
 
 .address-card-body {
-    padding: 20px;
+    padding: 22px 24px;
 }
 
 .address-detail {
     display: flex;
-    padding: 12px 0;
-    border-bottom: 1px solid #f0f0f0;
+    padding: 14px 0;
+    border-bottom: 1px solid rgba(11, 60, 73, 0.08);
 }
 
 .address-detail:last-child {
@@ -314,13 +379,14 @@ main {
 
 .address-label {
     font-weight: 600;
-    color: #667eea;
-    min-width: 150px;
-    margin-right: 15px;
+    color: #0b3c49;
+    min-width: 140px;
+    margin-right: 18px;
+    letter-spacing: 0.3px;
 }
 
 .address-value {
-    color: #333;
+    color: #164a57;
     flex: 1;
 }
 
@@ -410,8 +476,8 @@ main {
     }
     
     .company-logo {
-        max-width: 150px;
-        max-height: 80px;
+        max-width: 220px;
+        max-height: 120px;
     }
     
     main {
