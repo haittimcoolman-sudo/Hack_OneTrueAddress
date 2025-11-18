@@ -496,9 +496,10 @@ class GoldenSourceConnector:
             address_col = column_mapping['address']
             state_col = column_mapping['state']
             
-            # Match street number in address column
-            where_conditions.append(f'"{address_col}"::text ILIKE %s')
-            params.append(f'{street_number}%')
+            # Match EXACT street number in address column - must match exactly, not partially
+            # Use regex to match street number followed by space or end of string
+            where_conditions.append(f'"{address_col}"::text ~* %s')
+            params.append(f'^{street_number}\\s')
             
             # Match core street name in address column (without street type for flexibility)
             where_conditions.append(f'"{address_col}"::text ILIKE %s')
@@ -542,19 +543,22 @@ class GoldenSourceConnector:
             if cursor:
                 cursor.close()
     
-    def consolidate_pinellas_records(self, pinellas_matches: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def consolidate_pinellas_records(self, pinellas_matches: List[Dict[str, Any]], golden_source_address: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Consolidate multiple Pinellas records into a single record based on business rules.
+        Address fields are taken from the Golden Source, while other fields follow the consolidation rules.
         
         Rules:
-        1. If there is a single address with an Active Customer, retain that record.
-        2. If any addresses have Fiber Media, retain/update Fiber on the active customer record.
-        3. If any addresses have Exclusion flag 'Y' or Engineering review 'Y', retain/update 'Y' flags.
-        4. If no Active Customer but there is Fiber Media, retain the Fiber Media record.
-        5. If multiple Active Customers or multiple Fiber Media records, return error for manual review.
+        1. Use address fields (address1, address2, City/Mailing City, state, zipcode) from Golden Source
+        2. If there is a single address with an Active Customer, retain that record.
+        3. If any addresses have Fiber Media, retain/update Fiber on the active customer record.
+        4. If any addresses have Exclusion flag 'Y' or Engineering review 'Y', retain/update 'Y' flags.
+        5. If no Active Customer but there is Fiber Media, retain the Fiber Media record.
+        6. If multiple Active Customers or multiple Fiber Media records, return error for manual review.
         
         Args:
             pinellas_matches: List of address dictionaries from pinellas_fl_baddatascenarios
+            golden_source_address: Optional Golden Source address to use for address fields
             
         Returns:
             Dictionary with 'status' and either 'consolidated_record' or 'error' message
@@ -563,7 +567,74 @@ class GoldenSourceConnector:
             return {"status": "error", "error": "No records to consolidate"}
         
         if len(pinellas_matches) == 1:
-            return {"status": "success", "consolidated_record": pinellas_matches[0], "message": "Single record, no consolidation needed"}
+            consolidated_record = pinellas_matches[0].copy()
+            
+            # Apply Golden Source address even for single record
+            if golden_source_address:
+                print(f"\n[Single Record - Applying Golden Source Address]")
+                
+                golden_address_fields = {
+                    'address1': golden_source_address.get('address1'),
+                    'address2': golden_source_address.get('address2'),
+                    'state': golden_source_address.get('state'),
+                    'zipcode': golden_source_address.get('zipcode'),
+                }
+                
+                city_value = golden_source_address.get('Mailing City') or golden_source_address.get('city')
+                
+                # Find the city column name in the consolidated record
+                city_col = None
+                for key in consolidated_record.keys():
+                    key_lower = key.lower()
+                    if 'city' in key_lower:
+                        city_col = key
+                        break
+                
+                # Update address fields in consolidated record
+                # Define flexible matching patterns for each field
+                field_patterns = {
+                    'address1': ['address1', 'address_1', 'address 1', 'address', 'street', 'street address', 'street_address'],
+                    'address2': ['address2', 'address_2', 'address 2', 'address line 2', 'address_line_2'],
+                    'state': ['state', 'st'],
+                    'zipcode': ['zipcode', 'zip_code', 'zip code', 'zip', 'postal', 'postalcode', 'postal_code']
+                }
+                
+                for field_name, field_value in golden_address_fields.items():
+                    if field_value is not None:
+                        matching_col = None
+                        patterns = field_patterns.get(field_name, [field_name])
+                        
+                        # Try to find matching column using various patterns
+                        for col_name in consolidated_record.keys():
+                            col_lower = col_name.lower().replace('_', ' ').strip()
+                            for pattern in patterns:
+                                pattern_normalized = pattern.lower().replace('_', ' ').strip()
+                                if col_lower == pattern_normalized:
+                                    matching_col = col_name
+                                    break
+                            if matching_col:
+                                break
+                        
+                        if matching_col:
+                            old_value = consolidated_record[matching_col]
+                            consolidated_record[matching_col] = field_value
+                            print(f"  Updated {matching_col}: '{old_value}' -> '{field_value}'")
+                        else:
+                            # Don't add new columns - only update existing ones
+                            print(f"  ⚠️  Warning: No matching column found for '{field_name}' (value: '{field_value}') - skipping")
+                            print(f"     Available columns: {list(consolidated_record.keys())}")
+                
+                # Update city field
+                if city_value and city_col:
+                    old_city = consolidated_record[city_col]
+                    consolidated_record[city_col] = city_value
+                    print(f"  Updated {city_col}: '{old_city}' -> '{city_value}'")
+                elif city_value:
+                    print(f"  ⚠️  Warning: No matching city column found (value: '{city_value}') - skipping")
+                
+                print(f"  ✓ Applied Golden Source address to single record")
+            
+            return {"status": "success", "consolidated_record": consolidated_record, "message": "Single record, no consolidation needed"}
         
         # Identify records with Active Customer (assuming column names might vary)
         # Common column names: 'active_customer', 'Active Customer', 'ActiveCustomer', 'customer_status'
@@ -674,11 +745,135 @@ class GoldenSourceConnector:
         elif engineering_col and consolidated_record.get(engineering_col) is None:
             consolidated_record[engineering_col] = 'N'
         
+        # Rule: Use address fields from Golden Source if provided
+        if golden_source_address:
+            print(f"\n  Applying Golden Source address fields to consolidated record...")
+            
+            # Define the address field mappings from Golden Source to Internal
+            # Golden Source fields: address1, address2, Mailing City, state, zipcode
+            # Internal fields may vary, but we'll try common mappings
+            
+            golden_address_fields = {
+                'address1': golden_source_address.get('address1'),
+                'address2': golden_source_address.get('address2'),
+                'state': golden_source_address.get('state'),
+                'zipcode': golden_source_address.get('zipcode'),
+            }
+            
+            # Handle city field which might be named differently
+            city_value = golden_source_address.get('Mailing City') or golden_source_address.get('city')
+            
+            # Find the city column name in the consolidated record
+            city_col = None
+            for key in consolidated_record.keys():
+                key_lower = key.lower()
+                if 'city' in key_lower:
+                    city_col = key
+                    break
+            
+            # Update address fields in consolidated record
+            # Define flexible matching patterns for each field
+            field_patterns = {
+                'address1': ['address1', 'address_1', 'address 1', 'address', 'street', 'street address', 'street_address'],
+                'address2': ['address2', 'address_2', 'address 2', 'address line 2', 'address_line_2'],
+                'state': ['state', 'st'],
+                'zipcode': ['zipcode', 'zip_code', 'zip code', 'zip', 'postal', 'postalcode', 'postal_code']
+            }
+            
+            for field_name, field_value in golden_address_fields.items():
+                if field_value is not None:
+                    matching_col = None
+                    patterns = field_patterns.get(field_name, [field_name])
+                    
+                    # Try to find matching column using various patterns
+                    for col_name in consolidated_record.keys():
+                        col_lower = col_name.lower().replace('_', ' ').strip()
+                        for pattern in patterns:
+                            pattern_normalized = pattern.lower().replace('_', ' ').strip()
+                            if col_lower == pattern_normalized:
+                                matching_col = col_name
+                                break
+                        if matching_col:
+                            break
+                    
+                    if matching_col:
+                        old_value = consolidated_record[matching_col]
+                        consolidated_record[matching_col] = field_value
+                        print(f"    Updated {matching_col}: '{old_value}' -> '{field_value}'")
+                    else:
+                        # Don't add new columns - only update existing ones
+                        print(f"    ⚠️  Warning: No matching column found for '{field_name}' (value: '{field_value}') - skipping")
+                        print(f"       Available columns: {list(consolidated_record.keys())}")
+            
+            # Update city field
+            if city_value and city_col:
+                old_city = consolidated_record[city_col]
+                consolidated_record[city_col] = city_value
+                print(f"    Updated {city_col}: '{old_city}' -> '{city_value}'")
+            elif city_value:
+                # Don't add new columns - only update existing ones
+                print(f"    ⚠️  Warning: No matching city column found (value: '{city_value}') - skipping")
+            
+            print(f"  ✓ Successfully applied Golden Source address to consolidated record")
+        
         return {
             "status": "success",
             "consolidated_record": consolidated_record,
             "message": f"Consolidated {len(pinellas_matches)} records successfully"
         }
+    
+    def _map_golden_source_to_internal(self, golden_source_record: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Transform Golden Source column names to Internal table column names.
+        
+        Golden Source columns: address1, address2, Mailing City, state, zipcode
+        Internal table columns: Address, City, State, Zipcode
+        
+        Args:
+            golden_source_record: Record with Golden Source column names
+            
+        Returns:
+            Record with Internal table column names
+        """
+        print(f"\n[Mapping Golden Source to Internal Schema]")
+        print(f"  Input record keys: {list(golden_source_record.keys())}")
+        
+        # Define the mapping from Golden Source to Internal column names
+        column_mapping = {
+            'address1': 'Address',
+            'address2': 'Address 2',  # May or may not exist in internal table
+            'Mailing City': 'City',
+            'city': 'City',
+            'state': 'State',
+            'zipcode': 'Zipcode'
+        }
+        
+        internal_record = {}
+        
+        for gs_col, gs_value in golden_source_record.items():
+            # Try to find the corresponding internal column name
+            internal_col = column_mapping.get(gs_col)
+            
+            if internal_col:
+                # Only add non-empty values
+                if gs_value is not None and str(gs_value).strip() != '':
+                    internal_record[internal_col] = gs_value
+                    print(f"  Mapped '{gs_col}' -> '{internal_col}' = '{gs_value}'")
+                else:
+                    print(f"  Skipping '{gs_col}' (empty or None)")
+            else:
+                # Column doesn't have a mapping, check if it's already in internal format
+                # (in case the record already has some internal column names)
+                if gs_col in ['Address', 'City', 'State', 'Zipcode', 'Media', 'Active Customer', 'Exclusion', 'Engineering Review']:
+                    internal_record[gs_col] = gs_value
+                    print(f"  Keeping '{gs_col}' = '{gs_value}' (already in internal format)")
+                else:
+                    print(f"  ⚠️  Warning: No mapping found for '{gs_col}' - skipping")
+        
+        print(f"  Output record keys: {list(internal_record.keys())}")
+        print(f"  ✓ Mapping complete")
+        
+        return internal_record
     
     def push_to_internal_updates(self, consolidated_record: Dict[str, Any]) -> Dict[str, Any]:
         """

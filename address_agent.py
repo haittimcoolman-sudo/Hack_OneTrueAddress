@@ -1,5 +1,5 @@
 """Main agent module for OneTrueAddress - compares addresses using Claude."""
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from golden_source import GoldenSourceConnector
 from claude_client import ClaudeClient
 from config import CONFIDENCE_THRESHOLD
@@ -14,6 +14,71 @@ class AddressAgent:
         """Initialize the address agent."""
         self.claude_client = ClaudeClient(claude_api_key)
         self.golden_source = GoldenSourceConnector()
+    
+    def _check_exact_match(self, golden_address: Dict[str, Any], pinellas_matches: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Check if the Golden Source address exactly matches any of the Pinellas (Internal) addresses.
+        
+        Args:
+            golden_address: The matched address from golden_source
+            pinellas_matches: List of internal addresses from Pinellas table
+            
+        Returns:
+            Dictionary with 'is_exact_match' boolean and optional 'matched_record' if exact match found
+        """
+        if not pinellas_matches or len(pinellas_matches) == 0:
+            return {"is_exact_match": False}
+        
+        # Extract the primary address fields from golden_address
+        golden_addr1 = str(golden_address.get('address1', '')).strip().lower()
+        golden_city = str(golden_address.get('Mailing City', '')).strip().lower()
+        golden_state = str(golden_address.get('state', '')).strip().lower()
+        golden_zip = str(golden_address.get('zipcode', '')).strip().lower()
+        
+        # Try to find the address field name in pinellas records
+        if not pinellas_matches:
+            return {"is_exact_match": False}
+        
+        sample_record = pinellas_matches[0]
+        address_col = None
+        city_col = None
+        state_col = None
+        zip_col = None
+        
+        # Find column names (case-insensitive)
+        for key in sample_record.keys():
+            key_lower = key.lower()
+            if 'address' in key_lower or 'street' in key_lower:
+                if address_col is None:
+                    address_col = key
+            elif 'city' in key_lower or 'town' in key_lower:
+                if city_col is None:
+                    city_col = key
+            elif key_lower in ['state', 'st']:
+                if state_col is None:
+                    state_col = key
+            elif 'zip' in key_lower or 'postal' in key_lower:
+                if zip_col is None:
+                    zip_col = key
+        
+        # Check each internal address for exact match
+        for pinellas_record in pinellas_matches:
+            pinellas_addr = str(pinellas_record.get(address_col, '')).strip().lower() if address_col else ''
+            pinellas_city = str(pinellas_record.get(city_col, '')).strip().lower() if city_col else ''
+            pinellas_state = str(pinellas_record.get(state_col, '')).strip().lower() if state_col else ''
+            pinellas_zip = str(pinellas_record.get(zip_col, '')).strip().lower() if zip_col else ''
+            
+            # Check if all fields match exactly (case-insensitive)
+            if (golden_addr1 == pinellas_addr and 
+                golden_city == pinellas_city and 
+                golden_state == pinellas_state and 
+                golden_zip == pinellas_zip):
+                return {
+                    "is_exact_match": True,
+                    "matched_record": pinellas_record
+                }
+        
+        return {"is_exact_match": False}
     
     def match_address(self, input_address: str) -> Dict[str, Any]:
         """
@@ -107,6 +172,9 @@ class AddressAgent:
         
         # Step 4: If a match was found, query pinellas_fl_baddatascearios for related addresses
         pinellas_matches = []
+        exact_match_info = {"is_exact_match": False}
+        no_internal_match = False
+        
         if isinstance(parsed_result, dict) and parsed_result.get("match_found"):
             matched_address = parsed_result.get("matched_address")
             if matched_address:
@@ -121,6 +189,19 @@ class AddressAgent:
                         addr_str = " | ".join([f"{k}: {v}" for k, v in addr.items()])
                         print(f"{idx}. {addr_str}")
                     print("-" * 60)
+                    
+                    # Check if Golden Source exactly matches any Internal address
+                    exact_match_info = self._check_exact_match(matched_address, pinellas_matches)
+                    if exact_match_info.get("is_exact_match"):
+                        print("\n✓ EXACT MATCH FOUND: Golden Source address exactly matches an Internal address")
+                        print("  No update is needed for this address.")
+                    else:
+                        print("\n⚠️  No exact match found between Golden Source and Internal addresses")
+                        print("  Internal addresses may need updates.")
+                else:
+                    print("\n⚠️  No internal addresses found matching this Golden Source address")
+                    print("  Consider writing this Golden Source address to internal_updates table.")
+                    no_internal_match = True
         
         return {
             "input_address": input_address,
@@ -128,7 +209,9 @@ class AddressAgent:
             "raw_response": claude_response["response"],
             "candidates_searched": len(address_table),
             "confidence_threshold": CONFIDENCE_THRESHOLD,
-            "pinellas_matches": pinellas_matches
+            "pinellas_matches": pinellas_matches,
+            "exact_match_info": exact_match_info,
+            "no_internal_match": no_internal_match
         }
     
     def _parse_claude_response(self, response_text: str) -> Dict[str, Any]:

@@ -112,6 +112,12 @@
                 });
 
                 const data = await response.json();
+                
+                // Debug logging for match response
+                console.log('Match Response Data:');
+                console.log('  Match found:', data.match_found);
+                console.log('  Matched address:', data.matched_address);
+                console.log('  Pinellas matches:', data.pinellas_matches);
 
                 if (data.success) {
                     displayResults(data);
@@ -244,6 +250,22 @@
                 
                 addressesHtml += `</div></div>`;
                 
+                // Check if exact match exists
+                const isExactMatch = data.exact_match_info && data.exact_match_info.is_exact_match;
+                const noInternalMatch = data.no_internal_match;
+                const hasSingleInternalRecord = data.pinellas_matches && data.pinellas_matches.length === 1;
+                
+                // Display exact match message only if found AND there's only a single internal record
+                if (isExactMatch && hasSingleInternalRecord) {
+                    addressesHtml += `<div class="exact-match-message">
+                        <div class="exact-match-icon">✓</div>
+                        <div class="exact-match-text">
+                            <h3>Exact Match Found!</h3>
+                            <p>The Golden Source address exactly matches an Internal Address. No update is needed.</p>
+                        </div>
+                    </div>`;
+                }
+                
                 // Display Pinellas matches if available
                 if (data.pinellas_matches && data.pinellas_matches.length > 0) {
                     const headerText = data.pinellas_matches.length > 1 
@@ -271,7 +293,7 @@
                     
                     addressesHtml += `</div>`;
                     
-                    // Add "Push Updates" button if there are multiple Pinellas matches
+                    // Add "Push Updates" button if there are multiple Pinellas matches (even if one is an exact match)
                     if (data.pinellas_matches.length > 1) {
                         addressesHtml += `
                         <div class="push-updates-section">
@@ -284,6 +306,24 @@
                             </p>
                         </div>`;
                     }
+                } else if (noInternalMatch) {
+                    // No internal match found - show option to write to internal_updates
+                    addressesHtml += `<div class="no-internal-match-message">
+                        <div class="no-match-icon">⚠️</div>
+                        <div class="no-match-text">
+                            <h3>No Internal Match Found</h3>
+                            <p>The Golden Source address does not match any Internal addresses. You can write this address to the Internal Updates table.</p>
+                        </div>
+                    </div>
+                    <div class="push-updates-section">
+                        <button id="writeToInternalBtn" class="push-updates-btn">
+                            <span class="btn-text">Write to Internal Updates Table</span>
+                            <span class="btn-loader" style="display: none;">Processing...</span>
+                        </button>
+                        <p class="push-updates-info">
+                            Click to add this Golden Source address to team_cool_and_gang.internal_updates table.
+                        </p>
+                    </div>`;
                 }
                 
                 let totalMatches = 1 + (data.pinellas_matches ? data.pinellas_matches.length : 0);
@@ -299,16 +339,41 @@
             // Attach event listener to the "Push Updates" button if it exists
             const pushUpdatesBtn = document.getElementById('pushUpdatesBtn');
             if (pushUpdatesBtn && data.pinellas_matches) {
-                pushUpdatesBtn.addEventListener('click', async () => {
-                    await handlePushUpdates(data.pinellas_matches);
+                // Validate that matched_address has actual content
+                const hasValidAddress = data.matched_address && 
+                    Object.keys(data.matched_address).length > 0 &&
+                    (data.matched_address.address1 || data.matched_address.state);
+                
+                if (hasValidAddress) {
+                    pushUpdatesBtn.addEventListener('click', async () => {
+                        await handlePushUpdates(data.pinellas_matches, data.matched_address);
+                    });
+                } else {
+                    // Disable button and show error if no valid golden source address
+                    pushUpdatesBtn.disabled = true;
+                    pushUpdatesBtn.title = "No valid Golden Source address available";
+                    console.error("Cannot push updates: Golden Source address is missing or invalid", data.matched_address);
+                }
+            }
+            
+            // Attach event listener to the "Write to Internal" button if it exists
+            const writeToInternalBtn = document.getElementById('writeToInternalBtn');
+            if (writeToInternalBtn && data.matched_address) {
+                writeToInternalBtn.addEventListener('click', async () => {
+                    await handleWriteToInternal(data.matched_address);
                 });
             }
         }
         
-        async function handlePushUpdates(pinellas_matches) {
+        async function handlePushUpdates(pinellas_matches, golden_source_address) {
             const pushUpdatesBtn = document.getElementById('pushUpdatesBtn');
             const btnText = pushUpdatesBtn.querySelector('.btn-text');
             const btnLoader = pushUpdatesBtn.querySelector('.btn-loader');
+            
+            // Debug logging
+            console.log('Push Updates - Data being sent:');
+            console.log('  Pinellas Matches:', pinellas_matches);
+            console.log('  Golden Source Address:', golden_source_address);
             
             // Show loading state
             pushUpdatesBtn.disabled = true;
@@ -316,12 +381,19 @@
             btnLoader.style.display = 'inline';
             
             try {
+                const requestData = { 
+                    pinellas_matches: pinellas_matches,
+                    golden_source_address: golden_source_address
+                };
+                
+                console.log('Request payload:', JSON.stringify(requestData, null, 2));
+                
                 const response = await fetch('/push_updates', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ pinellas_matches: pinellas_matches })
+                    body: JSON.stringify(requestData)
                 });
                 
                 const data = await response.json();
@@ -364,6 +436,61 @@
             }
         }
         
+        async function handleWriteToInternal(golden_source_record) {
+            const writeToInternalBtn = document.getElementById('writeToInternalBtn');
+            const btnText = writeToInternalBtn.querySelector('.btn-text');
+            const btnLoader = writeToInternalBtn.querySelector('.btn-loader');
+            
+            // Show loading state
+            writeToInternalBtn.disabled = true;
+            btnText.style.display = 'none';
+            btnLoader.style.display = 'inline';
+            
+            try {
+                const response = await fetch('/write_to_internal', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ golden_source_record: golden_source_record })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Show success message
+                    alert(`Success! ${data.message}\n\nGolden Source address has been written to team_cool_and_gang.internal_updates.`);
+                    
+                    // Log the written record
+                    console.log('Written Record:', data.written_record);
+                    
+                    // Update button to show success
+                    btnText.textContent = 'Record Written Successfully ✓';
+                    btnText.style.display = 'inline';
+                    btnLoader.style.display = 'none';
+                    writeToInternalBtn.classList.add('success');
+                    
+                    // Display the written record in the UI
+                    displayWrittenRecord(data.written_record);
+                } else {
+                    // Show error message
+                    alert(`Error: ${data.error}`);
+                    
+                    // Reset button state
+                    writeToInternalBtn.disabled = false;
+                    btnText.style.display = 'inline';
+                    btnLoader.style.display = 'none';
+                }
+            } catch (error) {
+                alert('Network error: ' + error.message);
+                
+                // Reset button state
+                writeToInternalBtn.disabled = false;
+                btnText.style.display = 'inline';
+                btnLoader.style.display = 'none';
+            }
+        }
+        
         function displayConsolidatedRecord(consolidatedRecord) {
             // Create a new section to display the consolidated record
             const pushUpdatesSection = document.querySelector('.push-updates-section');
@@ -397,6 +524,41 @@
             
             // Scroll to the consolidated record display
             consolidatedDisplay.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+        
+        function displayWrittenRecord(writtenRecord) {
+            // Create a new section to display the written record
+            const pushUpdatesSection = document.querySelector('.push-updates-section');
+            
+            // Check if written record display already exists
+            let writtenDisplay = document.getElementById('writtenRecordDisplay');
+            if (!writtenDisplay) {
+                writtenDisplay = document.createElement('div');
+                writtenDisplay.id = 'writtenRecordDisplay';
+                writtenDisplay.className = 'consolidated-record-display';
+                pushUpdatesSection.appendChild(writtenDisplay);
+            }
+            
+            // Build the HTML for the written record
+            let recordHtml = `
+                <div class="consolidated-record-header">
+                    <h4>✓ Golden Source Record Written to Internal Updates</h4>
+                </div>
+                <div class="consolidated-record-body">`;
+            
+            for (const [key, value] of Object.entries(writtenRecord)) {
+                recordHtml += `
+                    <div class="consolidated-detail">
+                        <span class="consolidated-label">${escapeHtml(key)}:</span>
+                        <span class="consolidated-value">${escapeHtml(value || 'N/A')}</span>
+                    </div>`;
+            }
+            
+            recordHtml += `</div>`;
+            writtenDisplay.innerHTML = recordHtml;
+            
+            // Scroll to the written record display
+            writtenDisplay.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
 
         function showError(message) {

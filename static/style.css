@@ -688,6 +688,89 @@ main {
     }
 }
 
+/* Exact Match Message */
+.exact-match-message {
+    margin-top: 20px;
+    padding: 24px;
+    background: linear-gradient(145deg, rgba(212, 237, 218, 0.95), rgba(195, 230, 203, 0.95));
+    border-radius: 16px;
+    border: 2px solid rgba(40, 167, 69, 0.3);
+    box-shadow: 0 12px 24px rgba(40, 167, 69, 0.15);
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    animation: slideIn 0.5s ease-out;
+}
+
+.exact-match-icon {
+    font-size: 3em;
+    color: #28a745;
+    flex-shrink: 0;
+    background: rgba(255, 255, 255, 0.7);
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(40, 167, 69, 0.2);
+}
+
+.exact-match-text h3 {
+    margin: 0 0 8px 0;
+    color: #155724;
+    font-size: 1.3em;
+    font-weight: 700;
+}
+
+.exact-match-text p {
+    margin: 0;
+    color: #1e7e34;
+    font-size: 1em;
+    line-height: 1.5;
+}
+
+/* No Internal Match Message */
+.no-internal-match-message {
+    margin-top: 20px;
+    padding: 24px;
+    background: linear-gradient(145deg, rgba(255, 243, 224, 0.95), rgba(255, 235, 205, 0.95));
+    border-radius: 16px;
+    border: 2px solid rgba(255, 152, 0, 0.3);
+    box-shadow: 0 12px 24px rgba(255, 152, 0, 0.15);
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    animation: slideIn 0.5s ease-out;
+}
+
+.no-match-icon {
+    font-size: 3em;
+    flex-shrink: 0;
+    background: rgba(255, 255, 255, 0.7);
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(255, 152, 0, 0.2);
+}
+
+.no-match-text h3 {
+    margin: 0 0 8px 0;
+    color: #e65100;
+    font-size: 1.3em;
+    font-weight: 700;
+}
+
+.no-match-text p {
+    margin: 0;
+    color: #f57c00;
+    font-size: 1em;
+    line-height: 1.5;
+}
+
 @media (max-width: 768px) {
     .company-name {
         font-size: 2em;
@@ -718,6 +801,20 @@ main {
     
     .address-label {
         min-width: 120px;
+    }
+    
+    .exact-match-message,
+    .no-internal-match-message {
+        flex-direction: column;
+        text-align: center;
+        gap: 15px;
+    }
+    
+    .exact-match-icon,
+    .no-match-icon {
+        width: 60px;
+        height: 60px;
+        font-size: 2.5em;
     }
 }
 
