@@ -105,12 +105,30 @@ class AddressAgent:
                 parsed_result["business_rule_exception"] = True
                 parsed_result["confidence_threshold"] = CONFIDENCE_THRESHOLD
         
+        # Step 4: If a match was found, query pinellas_fl_baddatascearios for related addresses
+        pinellas_matches = []
+        if isinstance(parsed_result, dict) and parsed_result.get("match_found"):
+            matched_address = parsed_result.get("matched_address")
+            if matched_address:
+                print(f"\nStep 4: Searching for related addresses in pinellas_fl_baddatascearios...")
+                pinellas_matches = self.golden_source.get_pinellas_matches(matched_address)
+                print(f"Found {len(pinellas_matches)} related addresses in pinellas_fl_baddatascearios")
+                
+                if pinellas_matches:
+                    print("\nPinellas matches:")
+                    print("-" * 60)
+                    for idx, addr in enumerate(pinellas_matches, 1):
+                        addr_str = " | ".join([f"{k}: {v}" for k, v in addr.items()])
+                        print(f"{idx}. {addr_str}")
+                    print("-" * 60)
+        
         return {
             "input_address": input_address,
             "claude_response": parsed_result,
             "raw_response": claude_response["response"],
             "candidates_searched": len(address_table),
-            "confidence_threshold": CONFIDENCE_THRESHOLD
+            "confidence_threshold": CONFIDENCE_THRESHOLD,
+            "pinellas_matches": pinellas_matches
         }
     
     def _parse_claude_response(self, response_text: str) -> Dict[str, Any]:
