@@ -40,6 +40,28 @@ CONFIDENCE_THRESHOLD=90.0
 
 ## Usage
 
+### Web Interface (Recommended)
+
+Start the web application:
+
+```bash
+python web_app.py
+```
+
+Then open your browser and navigate to:
+```
+http://localhost:5000
+```
+
+The web interface features:
+- **Down South Communications** branded UI
+- Free-form text input for addresses
+- Real-time address matching
+- Detailed results display with confidence scores
+- Business rule exception warnings
+
+### Command Line Interface
+
 Run the agent with an address to match:
 
 ```bash
@@ -68,9 +90,12 @@ You can configure the confidence threshold in your `.env` file using `CONFIDENCE
 
 ## Project Structure
 
+- `web_app.py` - Flask web application (web UI)
 - `main.py` - Entry point and CLI interface
 - `address_agent.py` - Main agent orchestrating the matching process
 - `claude_client.py` - Claude API interaction module
 - `golden_source.py` - Database connection and query module
 - `config.py` - Configuration management
+- `templates/` - HTML templates for web UI
+- `static/` - CSS and static assets for web UI
 - `requirements.txt` - Python dependencies

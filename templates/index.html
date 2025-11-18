@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cool & Gang Communications - Address Matching</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo-container">
+                <img src="{{ url_for('static', filename='logo.png') }}" alt="Cool & Gang Communications Logo" class="company-logo" onerror="this.style.display='none'">
+            </div>
+            <h1 class="company-name">One Address Tool Rule them all </h1>
+            <p class="subtitle"></p>
+        </header>
+        <main>
+            <div class="two-column-layout">
+                <!-- Left Column: Input and System Response -->
+                <div class="left-column">
+                    <div class="input-section">
+                        <form id="addressForm">
+                            <div class="form-group">
+                                <label for="addressInput">Enter Address to Match:</label>
+                                <textarea 
+                                    id="addressInput" 
+                                    name="address" 
+                                    rows="4" 
+                                    placeholder="Enter a free-form address (e.g., 123 Main St, New York, NY 10001)"
+                                    required
+                                ></textarea>
+                            </div>
+                            <button type="submit" id="submitBtn" class="submit-btn">
+                                <span class="btn-text">See what you the address qualifies for!</span>
+                                <span class="btn-loader" style="display: none;">Processing...</span>
+                            </button>
+                        </form>
+                    </div>
+
+                    <div id="systemResponse" class="system-response-section" style="display: none;">
+                        <h2>System Response</h2>
+                        <div id="systemResponseContent"></div>
+                    </div>
+
+                    <div id="error" class="error-section" style="display: none;">
+                        <h3>Error</h3>
+                        <p id="errorMessage"></p>
+                    </div>
+                </div>
+
+                <!-- Right Column: Matched Addresses -->
+                <div class="right-column">
+                    <div class="matched-addresses-header">
+                        <h2>Matched Addresses</h2>
+                        <div id="matchCount" class="match-count" style="display: none;"></div>
+                    </div>
+                    <div id="matchedAddresses" class="matched-addresses-container">
+                        <div class="empty-state">
+                            <p>Enter an address to see matched results here.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        const form = document.getElementById('addressForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const btnText = submitBtn.querySelector('.btn-text');
+        const btnLoader = submitBtn.querySelector('.btn-loader');
+        const systemResponseSection = document.getElementById('systemResponse');
+        const systemResponseContent = document.getElementById('systemResponseContent');
+        const matchedAddressesContainer = document.getElementById('matchedAddresses');
+        const matchCount = document.getElementById('matchCount');
+        const errorSection = document.getElementById('error');
+        const errorMessage = document.getElementById('errorMessage');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const addressInput = document.getElementById('addressInput');
+            const address = addressInput.value.trim();
+            
+            if (!address) {
+                showError('Please enter an address to match.');
+                return;
+            }
+
+            // Hide previous results/errors
+            systemResponseSection.style.display = 'none';
+            errorSection.style.display = 'none';
+            matchedAddressesContainer.innerHTML = '<div class="empty-state"><p>Processing...</p></div>';
+            
+            // Show loading state
+            submitBtn.disabled = true;
+            btnText.style.display = 'none';
+            btnLoader.style.display = 'inline';
+
+            try {
+                const response = await fetch('/match', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ address: address })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    displayResults(data);
+                } else {
+                    showError(data.error || 'An error occurred while matching the address.');
+                }
+            } catch (error) {
+                showError('Network error: ' + error.message);
+            } finally {
+                // Reset button state
+                submitBtn.disabled = false;
+                btnText.style.display = 'inline';
+                btnLoader.style.display = 'none';
+            }
+        });
+
+        function displayResults(data) {
+            // Left Column: System Response (Input, Status, Confidence, Reasoning)
+            let systemHtml = '';
+
+            systemHtml += `<div class="response-item">
+                <strong>Input Address:</strong> ${escapeHtml(data.input_address)}
+            </div>`;
+
+            systemHtml += `<div class="response-item">
+                <strong>Candidates Searched:</strong> ${data.candidates_searched}
+            </div>`;
+
+            if (data.match_found) {
+                systemHtml += `<div class="response-item match-found">
+                    <strong>Status:</strong> <span class="status-badge success">✓ Match Found</span>
+                </div>`;
+
+                systemHtml += `<div class="response-item">
+                    <strong>Confidence:</strong> <span class="confidence ${getConfidenceClass(data.confidence)}">${data.confidence}%</span>
+                </div>`;
+
+                if (data.business_rule_exception) {
+                    systemHtml += `<div class="response-item warning">
+                        <strong>⚠️ Business Rule Exception:</strong> Confidence (${data.confidence}%) is below threshold (${data.confidence_threshold}%). This match requires manual review.
+                    </div>`;
+                }
+            } else {
+                systemHtml += `<div class="response-item match-not-found">
+                    <strong>Status:</strong> <span class="status-badge error">✗ No Match Found</span>
+                </div>`;
+
+                if (data.confidence !== 'N/A') {
+                    systemHtml += `<div class="response-item">
+                        <strong>Confidence:</strong> <span class="confidence">${data.confidence}%</span>
+                    </div>`;
+                }
+            }
+
+            if (data.reasoning) {
+                systemHtml += `<div class="response-item reasoning">
+                    <strong>Reasoning:</strong> ${escapeHtml(data.reasoning)}
+                </div>`;
+            }
+
+            systemResponseContent.innerHTML = systemHtml;
+            systemResponseSection.style.display = 'block';
+
+            // Right Column: Matched Addresses
+            let addressesHtml = '';
+            
+            if (data.match_found && data.matched_address) {
+                // Display matched address in the right column
+                addressesHtml += `<div class="matched-address-card">
+                    <div class="address-card-header">
+                        <span class="address-number">1</span>
+                        <span class="address-status-badge success">Matched</span>
+                    </div>
+                    <div class="address-card-body">`;
+                
+                for (const [key, value] of Object.entries(data.matched_address)) {
+                    addressesHtml += `<div class="address-detail">
+                        <span class="address-label">${escapeHtml(key)}:</span>
+                        <span class="address-value">${escapeHtml(value || 'N/A')}</span>
+                    </div>`;
+                }
+                
+                addressesHtml += `</div></div>`;
+                
+                matchCount.textContent = `1 match found`;
+                matchCount.style.display = 'block';
+            } else {
+                addressesHtml = '<div class="empty-state"><p>No matches found.</p></div>';
+                matchCount.style.display = 'none';
+            }
+
+            matchedAddressesContainer.innerHTML = addressesHtml;
+        }
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorSection.style.display = 'block';
+            errorSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function getConfidenceClass(confidence) {
+            if (confidence >= 90) return 'high';
+            if (confidence >= 70) return 'medium';
+            if (confidence >= 50) return 'low';
+            return 'very-low';
+        }
+    </script>
+</body>
+</html>
+
