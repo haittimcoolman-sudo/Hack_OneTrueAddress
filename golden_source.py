@@ -25,6 +25,20 @@ class GoldenSourceConnector:
         if self.db_type.lower() == "postgresql":
             try:
                 import psycopg2
+            except ImportError:
+                raise ImportError("psycopg2 is required for PostgreSQL. Install with: pip install psycopg2-binary")
+            
+            # Validate that required credentials are provided
+            if not GOLDEN_SOURCE_HOST:
+                raise ValueError("GOLDEN_SOURCE_HOST environment variable is not set")
+            if not GOLDEN_SOURCE_DATABASE:
+                raise ValueError("GOLDEN_SOURCE_DATABASE environment variable is not set")
+            if not GOLDEN_SOURCE_USER:
+                raise ValueError("GOLDEN_SOURCE_USER environment variable is not set")
+            if not GOLDEN_SOURCE_PASSWORD:
+                raise ValueError("GOLDEN_SOURCE_PASSWORD environment variable is not set")
+            
+            try:
                 self.connection = psycopg2.connect(
                     host=GOLDEN_SOURCE_HOST,
                     port=GOLDEN_SOURCE_PORT,
@@ -32,11 +46,55 @@ class GoldenSourceConnector:
                     user=GOLDEN_SOURCE_USER,
                     password=GOLDEN_SOURCE_PASSWORD
                 )
-            except ImportError:
-                raise ImportError("psycopg2 is required for PostgreSQL. Install with: pip install psycopg2-binary")
+                # Enable autocommit mode for read-only queries to avoid transaction issues
+                self.connection.autocommit = True
+            except Exception as e:
+                error_msg = str(e)
+                error_type = type(e).__name__
+                
+                # Check if it's an OperationalError (connection/auth issues)
+                if error_type == "OperationalError" or "OperationalError" in str(type(e)):
+                    if "password authentication failed" in error_msg.lower():
+                        raise ValueError(
+                            f"PostgreSQL authentication failed for user '{GOLDEN_SOURCE_USER}'.\n"
+                            f"Connection details: host={GOLDEN_SOURCE_HOST}, port={GOLDEN_SOURCE_PORT}, database={GOLDEN_SOURCE_DATABASE}\n"
+                            f"Please verify:\n"
+                            f"  1. The password in GOLDEN_SOURCE_PASSWORD is correct\n"
+                            f"  2. The user '{GOLDEN_SOURCE_USER}' exists and has access to the database\n"
+                            f"  3. The database server allows connections from your IP address\n"
+                            f"  4. Check your .env file or environment variables\n"
+                            f"\nOriginal error: {error_msg}"
+                        )
+                    elif "could not connect" in error_msg.lower() or "connection refused" in error_msg.lower():
+                        raise ValueError(
+                            f"Could not connect to PostgreSQL server at {GOLDEN_SOURCE_HOST}:{GOLDEN_SOURCE_PORT}.\n"
+                            f"Please verify:\n"
+                            f"  1. The server is running and accessible\n"
+                            f"  2. The host and port are correct\n"
+                            f"  3. Your firewall allows connections to this server\n"
+                            f"\nOriginal error: {error_msg}"
+                        )
+                    else:
+                        raise ValueError(f"PostgreSQL connection error: {error_msg}")
+                else:
+                    raise ValueError(f"Failed to connect to PostgreSQL database: {error_msg}")
         elif self.db_type.lower() == "mysql":
             try:
                 import mysql.connector
+            except ImportError:
+                raise ImportError("mysql-connector-python is required for MySQL. Install with: pip install mysql-connector-python")
+            
+            # Validate that required credentials are provided
+            if not GOLDEN_SOURCE_HOST:
+                raise ValueError("GOLDEN_SOURCE_HOST environment variable is not set")
+            if not GOLDEN_SOURCE_DATABASE:
+                raise ValueError("GOLDEN_SOURCE_DATABASE environment variable is not set")
+            if not GOLDEN_SOURCE_USER:
+                raise ValueError("GOLDEN_SOURCE_USER environment variable is not set")
+            if not GOLDEN_SOURCE_PASSWORD:
+                raise ValueError("GOLDEN_SOURCE_PASSWORD environment variable is not set")
+            
+            try:
                 self.connection = mysql.connector.connect(
                     host=GOLDEN_SOURCE_HOST,
                     port=GOLDEN_SOURCE_PORT,
@@ -44,8 +102,19 @@ class GoldenSourceConnector:
                     user=GOLDEN_SOURCE_USER,
                     password=GOLDEN_SOURCE_PASSWORD
                 )
-            except ImportError:
-                raise ImportError("mysql-connector-python is required for MySQL. Install with: pip install mysql-connector-python")
+            except mysql.connector.Error as e:
+                error_msg = str(e)
+                if "access denied" in error_msg.lower() or "authentication" in error_msg.lower():
+                    raise ValueError(
+                        f"MySQL authentication failed for user '{GOLDEN_SOURCE_USER}'.\n"
+                        f"Connection details: host={GOLDEN_SOURCE_HOST}, port={GOLDEN_SOURCE_PORT}, database={GOLDEN_SOURCE_DATABASE}\n"
+                        f"Please verify your credentials in the .env file or environment variables.\n"
+                        f"\nOriginal error: {error_msg}"
+                    )
+                else:
+                    raise ValueError(f"MySQL connection error: {error_msg}")
+            except Exception as e:
+                raise ValueError(f"Failed to connect to MySQL database: {e}")
         elif self.db_type.lower() == "sqlite":
             try:
                 import sqlite3
@@ -114,7 +183,7 @@ class GoldenSourceConnector:
     def get_filtered_addresses(self, search_criteria: dict, limit: int = 100) -> List[Dict[str, Any]]:
         """
         Retrieve filtered addresses from the golden source table based on search criteria.
-        Only selects specific columns: prefix, address1, address2, suffix, MailingCity, State, ZipCode
+        Only selects specific columns: address1, address2, Mailing City, state, zipcode
         
         Args:
             search_criteria: Dictionary with search terms (street_number, street_name, city, state, zip_code, search_terms)
@@ -123,72 +192,81 @@ class GoldenSourceConnector:
         Returns:
             List of address dictionaries with only the specified columns
         """
-        cursor = self.connection.cursor()
-        
-        # Parse schema and table name if schema-qualified
-        table_parts = GOLDEN_SOURCE_TABLE.split('.')
-        if len(table_parts) == 2:
-            schema_name, table_name = table_parts
-            quoted_table = f'"{schema_name}"."{table_name}"'
-        else:
-            schema_name = None
-            table_name = GOLDEN_SOURCE_TABLE
-            quoted_table = f'"{table_name}"'
-        
-        # Define the specific columns we want to select
-        target_columns = ['address1', 'address2', 'Mailing City', 'state', 'zipcode']
-        quoted_columns = ', '.join([f'"{col}"' for col in target_columns])
-        
-        # Build WHERE clause based on search criteria
-        # Only filter using: street_name, street_type, city, and state
-        # Use OR logic so any provided criteria can match (more flexible)
-        where_conditions = []
-        params = []
-        
-        # Filter by street_name (search in address1)
-        street_name = search_criteria.get("street_name")
-        if street_name:
-            where_conditions.append('"address1"::text ILIKE %s')
-            params.append(f'%{street_name}%')
-        
-        # Filter by street_type (search in address1)
-        street_type = search_criteria.get("street_type")
-        if street_type:
-            where_conditions.append('"address1"::text ILIKE %s')
-            params.append(f'%{street_type}%')
-        
-        # Filter by city (search in MailingCity)
-        city = search_criteria.get("city")
-        if city:
-            where_conditions.append('"Mailing City"::text ILIKE %s')
-            params.append(f'%{city}%')
-        
-        # Filter by state (search in State)
-        state = search_criteria.get("state")
-        if state:
-            where_conditions.append('"state"::text ILIKE %s')
-            params.append(f'%{state}%')
-        
-        # Build and execute query
-        # Use OR logic so any provided criteria can match (more flexible than requiring all)
-        if where_conditions:
-            where_clause = " WHERE " + " OR ".join(where_conditions)
-            query = f'SELECT {quoted_columns} FROM {quoted_table}{where_clause} LIMIT {limit}'
-        else:
-            # If no criteria, return a small sample
-            query = f'SELECT {quoted_columns} FROM {quoted_table} LIMIT {limit}'
-        
-        cursor.execute(query, params)
-        rows = cursor.fetchall()
-        
-        # Convert to list of dictionaries using the target columns
-        addresses = []
-        for row in rows:
-            address_dict = {target_columns[i]: row[i] for i in range(len(target_columns))}
-            addresses.append(address_dict)
-        
-        cursor.close()
-        return addresses
+        cursor = None
+        try:
+            cursor = self.connection.cursor()
+            
+            # Parse schema and table name if schema-qualified
+            table_parts = GOLDEN_SOURCE_TABLE.split('.')
+            if len(table_parts) == 2:
+                schema_name, table_name = table_parts
+                quoted_table = f'"{schema_name}"."{table_name}"'
+            else:
+                schema_name = None
+                table_name = GOLDEN_SOURCE_TABLE
+                quoted_table = f'"{table_name}"'
+            
+            # Define the specific columns we want to select
+            target_columns = ['address1', 'address2', 'Mailing City', 'state', 'zipcode']
+            quoted_columns = ', '.join([f'"{col}"' for col in target_columns])
+            
+            # Build WHERE clause based on search criteria
+            # Only filter using: street_name, street_type, city, and state
+            # Use OR logic so any provided criteria can match (more flexible)
+            where_conditions = []
+            params = []
+            
+            # Filter by street_name (search in address1)
+            street_name = search_criteria.get("street_name")
+            if street_name:
+                where_conditions.append('"address1"::text ILIKE %s')
+                params.append(f'%{street_name}%')
+            
+            # Filter by street_type (search in address1)
+            street_type = search_criteria.get("street_type")
+            if street_type:
+                where_conditions.append('"address1"::text ILIKE %s')
+                params.append(f'%{street_type}%')
+            
+            # Filter by city (search in MailingCity)
+            city = search_criteria.get("city")
+            if city:
+                where_conditions.append('"Mailing City"::text ILIKE %s')
+                params.append(f'%{city}%')
+            
+            # Filter by state (search in State)
+            state = search_criteria.get("state")
+            if state:
+                where_conditions.append('"state"::text ILIKE %s')
+                params.append(f'%{state}%')
+            
+            # Build and execute query
+            # Use OR logic so any provided criteria can match (more flexible than requiring all)
+            if where_conditions:
+                where_clause = " WHERE " + " OR ".join(where_conditions)
+                query = f'SELECT {quoted_columns} FROM {quoted_table}{where_clause} LIMIT {limit}'
+            else:
+                # If no criteria, return a small sample
+                query = f'SELECT {quoted_columns} FROM {quoted_table} LIMIT {limit}'
+            
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            
+            # Convert to list of dictionaries using the target columns
+            addresses = []
+            for row in rows:
+                address_dict = {target_columns[i]: row[i] for i in range(len(target_columns))}
+                addresses.append(address_dict)
+            
+            return addresses
+            
+        except Exception as e:
+            # With autocommit enabled, we don't need rollback, but log the error
+            error_msg = str(e)
+            raise ValueError(f"Database query error: {error_msg}")
+        finally:
+            if cursor:
+                cursor.close()
     
     def close(self):
         """Close the database connection."""
