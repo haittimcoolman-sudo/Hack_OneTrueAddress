@@ -542,6 +542,214 @@ class GoldenSourceConnector:
             if cursor:
                 cursor.close()
     
+    def consolidate_pinellas_records(self, pinellas_matches: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        Consolidate multiple Pinellas records into a single record based on business rules.
+        
+        Rules:
+        1. If there is a single address with an Active Customer, retain that record.
+        2. If any addresses have Fiber Media, retain/update Fiber on the active customer record.
+        3. If any addresses have Exclusion flag 'Y' or Engineering review 'Y', retain/update 'Y' flags.
+        4. If no Active Customer but there is Fiber Media, retain the Fiber Media record.
+        5. If multiple Active Customers or multiple Fiber Media records, return error for manual review.
+        
+        Args:
+            pinellas_matches: List of address dictionaries from pinellas_fl_baddatascenarios
+            
+        Returns:
+            Dictionary with 'status' and either 'consolidated_record' or 'error' message
+        """
+        if not pinellas_matches or len(pinellas_matches) == 0:
+            return {"status": "error", "error": "No records to consolidate"}
+        
+        if len(pinellas_matches) == 1:
+            return {"status": "success", "consolidated_record": pinellas_matches[0], "message": "Single record, no consolidation needed"}
+        
+        # Identify records with Active Customer (assuming column names might vary)
+        # Common column names: 'active_customer', 'Active Customer', 'ActiveCustomer', 'customer_status'
+        active_customer_records = []
+        fiber_media_records = []
+        records_with_exclusion_y = []
+        records_with_engineering_y = []
+        
+        # Try to identify column names dynamically
+        sample_record = pinellas_matches[0]
+        active_customer_col = None
+        media_type_col = None
+        exclusion_col = None
+        engineering_col = None
+        
+        # Find the relevant columns (case-insensitive)
+        for key in sample_record.keys():
+            key_lower = key.lower()
+            if 'active' in key_lower and 'customer' in key_lower:
+                active_customer_col = key
+            elif 'media' in key_lower or 'service' in key_lower:
+                media_type_col = key
+            elif 'exclusion' in key_lower:
+                exclusion_col = key
+            elif 'engineering' in key_lower and 'review' in key_lower:
+                engineering_col = key
+        
+        print(f"\n[Consolidation Debug]")
+        print(f"  Active Customer Column: {active_customer_col}")
+        print(f"  Media Type Column: {media_type_col}")
+        print(f"  Exclusion Column: {exclusion_col}")
+        print(f"  Engineering Review Column: {engineering_col}")
+        
+        # Categorize records
+        for record in pinellas_matches:
+            # Check for active customer
+            if active_customer_col and str(record.get(active_customer_col, '')).strip().upper() in ['Y', 'YES', 'TRUE', '1']:
+                active_customer_records.append(record)
+            
+            # Check for Fiber Media
+            if media_type_col and 'FIBER' in str(record.get(media_type_col, '')).upper():
+                fiber_media_records.append(record)
+            
+            # Check for Exclusion flag Y
+            if exclusion_col and str(record.get(exclusion_col, '')).strip().upper() in ['Y', 'YES', 'TRUE', '1']:
+                records_with_exclusion_y.append(record)
+            
+            # Check for Engineering Review Y
+            if engineering_col and str(record.get(engineering_col, '')).strip().upper() in ['Y', 'YES', 'TRUE', '1']:
+                records_with_engineering_y.append(record)
+        
+        print(f"  Active Customer Records: {len(active_customer_records)}")
+        print(f"  Fiber Media Records: {len(fiber_media_records)}")
+        print(f"  Exclusion Y Records: {len(records_with_exclusion_y)}")
+        print(f"  Engineering Review Y Records: {len(records_with_engineering_y)}")
+        
+        # Rule 5: If multiple Active Customers or multiple Fiber Media, prompt manual review
+        if len(active_customer_records) > 1:
+            return {
+                "status": "error",
+                "error": "Multiple Active Customer records found. Manual review required.",
+                "requires_manual_review": True
+            }
+        
+        if len(fiber_media_records) > 1:
+            return {
+                "status": "error",
+                "error": "Multiple Fiber Media records found. Manual review required.",
+                "requires_manual_review": True
+            }
+        
+        # Start with the base record to consolidate
+        consolidated_record = None
+        
+        # Rule 1: If there is a single Active Customer, use that as base
+        if len(active_customer_records) == 1:
+            consolidated_record = active_customer_records[0].copy()
+            print(f"  Using Active Customer record as base")
+            
+            # Rule 2: If any address has Fiber Media, update the active customer record
+            if fiber_media_records and media_type_col:
+                fiber_value = fiber_media_records[0].get(media_type_col)
+                # Update to Fiber if current is Copper
+                if 'COPPER' in str(consolidated_record.get(media_type_col, '')).upper() or not consolidated_record.get(media_type_col):
+                    consolidated_record[media_type_col] = fiber_value
+                    print(f"  Updated Media Type to: {fiber_value}")
+        
+        # Rule 4: If no Active Customer but there is Fiber Media, use Fiber record as base
+        elif fiber_media_records:
+            consolidated_record = fiber_media_records[0].copy()
+            print(f"  Using Fiber Media record as base")
+        
+        # If still no base record, use the first record
+        if consolidated_record is None:
+            consolidated_record = pinellas_matches[0].copy()
+            print(f"  Using first record as base")
+        
+        # Rule 3: Update Exclusion and Engineering Review flags to 'Y' if any record has 'Y'
+        if records_with_exclusion_y and exclusion_col:
+            consolidated_record[exclusion_col] = 'Y'
+            print(f"  Set Exclusion flag to: Y")
+        elif exclusion_col and consolidated_record.get(exclusion_col) is None:
+            consolidated_record[exclusion_col] = 'N'
+        
+        if records_with_engineering_y and engineering_col:
+            consolidated_record[engineering_col] = 'Y'
+            print(f"  Set Engineering Review flag to: Y")
+        elif engineering_col and consolidated_record.get(engineering_col) is None:
+            consolidated_record[engineering_col] = 'N'
+        
+        return {
+            "status": "success",
+            "consolidated_record": consolidated_record,
+            "message": f"Consolidated {len(pinellas_matches)} records successfully"
+        }
+    
+    def push_to_internal_updates(self, consolidated_record: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Write a consolidated record to the team_cool_and_gang.internal_updates table.
+        
+        Args:
+            consolidated_record: The consolidated address record to insert
+            
+        Returns:
+            Dictionary with 'status' and 'message' or 'error'
+        """
+        cursor = None
+        try:
+            cursor = self.connection.cursor()
+            
+            # Parse the internal_updates table name
+            updates_table = "team_cool_and_gang.internal_updates"
+            table_parts = updates_table.split('.')
+            if len(table_parts) == 2:
+                schema_name, table_name = table_parts
+                quoted_table = f'"{schema_name}"."{table_name}"'
+            else:
+                table_name = updates_table
+                quoted_table = f'"{table_name}"'
+            
+            # Build INSERT statement
+            columns = list(consolidated_record.keys())
+            values = [consolidated_record[col] for col in columns]
+            
+            # Create placeholders for parameterized query
+            placeholders = ', '.join(['%s'] * len(columns))
+            quoted_columns = ', '.join([f'"{col}"' for col in columns])
+            
+            insert_query = f'INSERT INTO {quoted_table} ({quoted_columns}) VALUES ({placeholders})'
+            
+            print(f"\n[Push to Internal Updates]")
+            print(f"Query: {insert_query}")
+            print(f"Values: {values[:5]}...")  # Show first 5 values for brevity
+            
+            cursor.execute(insert_query, values)
+            
+            # Commit the transaction
+            if not self.connection.autocommit:
+                self.connection.commit()
+            
+            print(f"  ✓ Successfully inserted record into {updates_table}")
+            
+            return {
+                "status": "success",
+                "message": f"Record successfully pushed to {updates_table}"
+            }
+            
+        except Exception as e:
+            error_msg = str(e)
+            print(f"  ✗ Error pushing to internal updates: {error_msg}")
+            
+            # Rollback on error
+            if not self.connection.autocommit:
+                try:
+                    self.connection.rollback()
+                except:
+                    pass
+            
+            return {
+                "status": "error",
+                "error": f"Failed to push update: {error_msg}"
+            }
+        finally:
+            if cursor:
+                cursor.close()
+    
     def close(self):
         """Close the database connection."""
         if self.connection:

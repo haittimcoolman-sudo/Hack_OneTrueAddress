@@ -12,7 +12,7 @@
             <div class="logo-container">
                 <img src="{{ url_for('static', filename='logo.png') }}" alt="Cool & Gang Communications Logo" class="company-logo" onerror="this.style.display='none'">
             </div>
-            <h1 class="company-name">One Address Tool Rule them all </h1>
+            <h1 class="company-name">One True Address</h1>
             <p class="subtitle"></p>
         </header>
         <main>
@@ -32,7 +32,7 @@
                                 ></textarea>
                             </div>
                             <button type="submit" id="submitBtn" class="submit-btn">
-                                <span class="btn-text">See what you the address qualifies for!</span>
+                                <span class="btn-text">Search For Your Address</span>
                                 <span class="btn-loader" style="display: none;">Processing...</span>
                             </button>
                             <button type="button" id="doOverBtn" class="do-over-btn" style="display: none;">
@@ -205,11 +205,41 @@
                     </div>
                     <div class="address-card-body">`;
                 
+                // Display fields in specific order: address1, address2, City, state, zipcode
+                // Then display any remaining fields
+                const priorityFields = ['address1', 'address2', 'Mailing City', 'state', 'zipcode'];
+                const displayedFields = new Set();
+                
+                // Field label mapping for display
+                const fieldLabels = {
+                    'address1': 'Address1',
+                    'address2': 'Address2',
+                    'Mailing City': 'City',
+                    'state': 'State',
+                    'zipcode': 'Zipcode'
+                };
+                
+                // First, display priority fields in order
+                for (const key of priorityFields) {
+                    if (key in data.matched_address) {
+                        // Use custom label or default to the key
+                        const displayLabel = fieldLabels[key] || key;
+                        addressesHtml += `<div class="address-detail">
+                            <span class="address-label">${escapeHtml(displayLabel)}:</span>
+                            <span class="address-value">${escapeHtml(data.matched_address[key] || 'N/A')}</span>
+                        </div>`;
+                        displayedFields.add(key);
+                    }
+                }
+                
+                // Then display all remaining fields
                 for (const [key, value] of Object.entries(data.matched_address)) {
-                    addressesHtml += `<div class="address-detail">
-                        <span class="address-label">${escapeHtml(key)}:</span>
-                        <span class="address-value">${escapeHtml(value || 'N/A')}</span>
-                    </div>`;
+                    if (!displayedFields.has(key)) {
+                        addressesHtml += `<div class="address-detail">
+                            <span class="address-label">${escapeHtml(key)}:</span>
+                            <span class="address-value">${escapeHtml(value || 'N/A')}</span>
+                        </div>`;
+                    }
                 }
                 
                 addressesHtml += `</div></div>`;
@@ -226,7 +256,6 @@
                         addressesHtml += `<div class="matched-address-card pinellas-match">
                             <div class="address-card-header">
                                 <span class="address-number">${index + 1}</span>
-                                <span class="address-status-badge pinellas">Pinellas Match</span>
                             </div>
                             <div class="address-card-body">`;
                         
@@ -241,6 +270,20 @@
                     });
                     
                     addressesHtml += `</div>`;
+                    
+                    // Add "Push Updates" button if there are multiple Pinellas matches
+                    if (data.pinellas_matches.length > 1) {
+                        addressesHtml += `
+                        <div class="push-updates-section">
+                            <button id="pushUpdatesBtn" class="push-updates-btn">
+                                <span class="btn-text">Push Updates to Internal Database</span>
+                                <span class="btn-loader" style="display: none;">Processing...</span>
+                            </button>
+                            <p class="push-updates-info">
+                                Multiple address records found. Click to consolidate and update the internal database.
+                            </p>
+                        </div>`;
+                    }
                 }
                 
                 let totalMatches = 1 + (data.pinellas_matches ? data.pinellas_matches.length : 0);
@@ -252,6 +295,108 @@
             }
 
             matchedAddressesContainer.innerHTML = addressesHtml;
+            
+            // Attach event listener to the "Push Updates" button if it exists
+            const pushUpdatesBtn = document.getElementById('pushUpdatesBtn');
+            if (pushUpdatesBtn && data.pinellas_matches) {
+                pushUpdatesBtn.addEventListener('click', async () => {
+                    await handlePushUpdates(data.pinellas_matches);
+                });
+            }
+        }
+        
+        async function handlePushUpdates(pinellas_matches) {
+            const pushUpdatesBtn = document.getElementById('pushUpdatesBtn');
+            const btnText = pushUpdatesBtn.querySelector('.btn-text');
+            const btnLoader = pushUpdatesBtn.querySelector('.btn-loader');
+            
+            // Show loading state
+            pushUpdatesBtn.disabled = true;
+            btnText.style.display = 'none';
+            btnLoader.style.display = 'inline';
+            
+            try {
+                const response = await fetch('/push_updates', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ pinellas_matches: pinellas_matches })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Show success message
+                    alert(`Success! ${data.message}\n\nConsolidated record has been pushed to the internal database.`);
+                    
+                    // Log the consolidated record
+                    console.log('Consolidated Record:', data.consolidated_record);
+                    
+                    // Update button to show success
+                    btnText.textContent = 'Updates Pushed Successfully ✓';
+                    btnText.style.display = 'inline';
+                    btnLoader.style.display = 'none';
+                    pushUpdatesBtn.classList.add('success');
+                    
+                    // Display the consolidated record in the UI
+                    displayConsolidatedRecord(data.consolidated_record);
+                } else {
+                    // Show error message
+                    if (data.requires_manual_review) {
+                        alert(`Manual Review Required\n\n${data.error}\n\nPlease review and update the records manually.`);
+                    } else {
+                        alert(`Error: ${data.error}`);
+                    }
+                    
+                    // Reset button state
+                    pushUpdatesBtn.disabled = false;
+                    btnText.style.display = 'inline';
+                    btnLoader.style.display = 'none';
+                }
+            } catch (error) {
+                alert('Network error: ' + error.message);
+                
+                // Reset button state
+                pushUpdatesBtn.disabled = false;
+                btnText.style.display = 'inline';
+                btnLoader.style.display = 'none';
+            }
+        }
+        
+        function displayConsolidatedRecord(consolidatedRecord) {
+            // Create a new section to display the consolidated record
+            const pushUpdatesSection = document.querySelector('.push-updates-section');
+            
+            // Check if consolidated record display already exists
+            let consolidatedDisplay = document.getElementById('consolidatedRecordDisplay');
+            if (!consolidatedDisplay) {
+                consolidatedDisplay = document.createElement('div');
+                consolidatedDisplay.id = 'consolidatedRecordDisplay';
+                consolidatedDisplay.className = 'consolidated-record-display';
+                pushUpdatesSection.appendChild(consolidatedDisplay);
+            }
+            
+            // Build the HTML for the consolidated record
+            let recordHtml = `
+                <div class="consolidated-record-header">
+                    <h4>✓ Consolidated Record Pushed to Internal Database</h4>
+                </div>
+                <div class="consolidated-record-body">`;
+            
+            for (const [key, value] of Object.entries(consolidatedRecord)) {
+                recordHtml += `
+                    <div class="consolidated-detail">
+                        <span class="consolidated-label">${escapeHtml(key)}:</span>
+                        <span class="consolidated-value">${escapeHtml(value || 'N/A')}</span>
+                    </div>`;
+            }
+            
+            recordHtml += `</div>`;
+            consolidatedDisplay.innerHTML = recordHtml;
+            
+            // Scroll to the consolidated record display
+            consolidatedDisplay.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
 
         function showError(message) {

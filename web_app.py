@@ -90,6 +90,62 @@ def match_address():
             'error': error_msg
         }), 500
 
+@app.route('/push_updates', methods=['POST'])
+def push_updates():
+    """Handle push updates request to consolidate and write to internalupdates table."""
+    try:
+        data = request.get_json()
+        pinellas_matches = data.get('pinellas_matches', [])
+        
+        if not pinellas_matches:
+            return jsonify({
+                'success': False,
+                'error': 'No Pinellas matches provided.'
+            }), 400
+        
+        # Get agent and consolidate records
+        agent = get_agent()
+        
+        # Step 1: Consolidate the records
+        consolidation_result = agent.golden_source.consolidate_pinellas_records(pinellas_matches)
+        
+        if consolidation_result['status'] == 'error':
+            if consolidation_result.get('requires_manual_review'):
+                return jsonify({
+                    'success': False,
+                    'error': consolidation_result['error'],
+                    'requires_manual_review': True
+                }), 400
+            else:
+                return jsonify({
+                    'success': False,
+                    'error': consolidation_result['error']
+                }), 400
+        
+        # Step 2: Push the consolidated record to internalupdates table
+        consolidated_record = consolidation_result['consolidated_record']
+        push_result = agent.golden_source.push_to_internal_updates(consolidated_record)
+        
+        if push_result['status'] == 'error':
+            return jsonify({
+                'success': False,
+                'error': push_result['error']
+            }), 500
+        
+        return jsonify({
+            'success': True,
+            'message': push_result['message'],
+            'consolidated_record': consolidated_record
+        })
+        
+    except Exception as e:
+        error_msg = str(e)
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': error_msg
+        }), 500
+
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint."""
