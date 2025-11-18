@@ -76,6 +76,14 @@ def match_address():
                 # Include pinellas matches if available
                 pinellas_matches = result.get('pinellas_matches', [])
                 response_data['pinellas_matches'] = pinellas_matches
+                
+                # Include exact match info
+                exact_match_info = result.get('exact_match_info', {"is_exact_match": False})
+                response_data['exact_match_info'] = exact_match_info
+                
+                # Include no internal match flag
+                no_internal_match = result.get('no_internal_match', False)
+                response_data['no_internal_match'] = no_internal_match
         else:
             response_data['match_found'] = False
             response_data['raw_response'] = result.get('raw_response', 'No response')
@@ -96,6 +104,14 @@ def push_updates():
     try:
         data = request.get_json()
         pinellas_matches = data.get('pinellas_matches', [])
+        golden_source_address = data.get('golden_source_address', {})
+        
+        # Debug logging
+        print(f"\n[Push Updates Request Debug]")
+        print(f"  Request data keys: {list(data.keys())}")
+        print(f"  Pinellas matches count: {len(pinellas_matches)}")
+        print(f"  Golden source address keys: {list(golden_source_address.keys()) if golden_source_address else 'None'}")
+        print(f"  Golden source address: {golden_source_address}")
         
         if not pinellas_matches:
             return jsonify({
@@ -103,11 +119,19 @@ def push_updates():
                 'error': 'No Pinellas matches provided.'
             }), 400
         
+        if not golden_source_address or len(golden_source_address) == 0:
+            error_msg = f'No Golden Source address provided. Received: {golden_source_address}'
+            print(f"  ERROR: {error_msg}")
+            return jsonify({
+                'success': False,
+                'error': error_msg
+            }), 400
+        
         # Get agent and consolidate records
         agent = get_agent()
         
-        # Step 1: Consolidate the records
-        consolidation_result = agent.golden_source.consolidate_pinellas_records(pinellas_matches)
+        # Step 1: Consolidate the records using Golden Source address
+        consolidation_result = agent.golden_source.consolidate_pinellas_records(pinellas_matches, golden_source_address)
         
         if consolidation_result['status'] == 'error':
             if consolidation_result.get('requires_manual_review'):
@@ -136,6 +160,59 @@ def push_updates():
             'success': True,
             'message': push_result['message'],
             'consolidated_record': consolidated_record
+        })
+        
+    except Exception as e:
+        error_msg = str(e)
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': error_msg
+        }), 500
+
+@app.route('/write_to_internal', methods=['POST'])
+def write_to_internal():
+    """Handle writing Golden Source record to internal_updates when no internal match found."""
+    try:
+        data = request.get_json()
+        golden_source_record = data.get('golden_source_record', {})
+        
+        if not golden_source_record:
+            return jsonify({
+                'success': False,
+                'error': 'No Golden Source record provided.'
+            }), 400
+        
+        # Get agent and write the record
+        agent = get_agent()
+        
+        # Transform Golden Source column names to Internal table column names
+        print(f"\n[Write to Internal - Transform Golden Source Record]")
+        print(f"  Original Golden Source record: {golden_source_record}")
+        
+        internal_record = agent.golden_source._map_golden_source_to_internal(golden_source_record)
+        
+        print(f"  Transformed Internal record: {internal_record}")
+        
+        if not internal_record or len(internal_record) == 0:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to transform Golden Source record to Internal format. No valid fields found.'
+            }), 400
+        
+        # Push the transformed record to internal_updates table
+        push_result = agent.golden_source.push_to_internal_updates(internal_record)
+        
+        if push_result['status'] == 'error':
+            return jsonify({
+                'success': False,
+                'error': push_result['error']
+            }), 500
+        
+        return jsonify({
+            'success': True,
+            'message': push_result['message'],
+            'written_record': internal_record
         })
         
     except Exception as e:
