@@ -31,7 +31,11 @@ atexit.register(cleanup_agent)
 @app.route('/')
 def index():
     """Render the main page."""
-    return render_template('index.html')
+    response = app.make_response(render_template('index.html'))
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+    return response
 
 @app.route('/match', methods=['POST'])
 def match_address():
@@ -68,6 +72,10 @@ def match_address():
             if response_data['match_found']:
                 matched_address = claude_response.get('matched_address', {})
                 response_data['matched_address'] = matched_address
+                
+                # Include pinellas matches if available
+                pinellas_matches = result.get('pinellas_matches', [])
+                response_data['pinellas_matches'] = pinellas_matches
         else:
             response_data['match_found'] = False
             response_data['raw_response'] = result.get('raw_response', 'No response')
@@ -86,6 +94,15 @@ def match_address():
 def health():
     """Health check endpoint."""
     return jsonify({'status': 'ok'})
+
+@app.after_request
+def add_header(response):
+    """Add headers to prevent caching of static files during development."""
+    if app.debug:
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    return response
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)

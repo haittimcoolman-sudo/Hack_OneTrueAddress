@@ -17,6 +17,10 @@ GOLDEN_SOURCE_USER = os.getenv("GOLDEN_SOURCE_USER")
 GOLDEN_SOURCE_PASSWORD = os.getenv("GOLDEN_SOURCE_PASSWORD")
 GOLDEN_SOURCE_TABLE = os.getenv("GOLDEN_SOURCE_TABLE", "addresses")
 
+# Pinellas FL Bad Data Scenarios Table Configuration
+# Note: Use schema-qualified name if needed (e.g., "team_cool_and_gang.pinellas_fl_baddatascenarios")
+PINELLAS_TABLE = os.getenv("PINELLAS_TABLE", "team_cool_and_gang.pinellas_fl_baddatascenarios")
+
 # Confidence Threshold Configuration
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "90.0"))  # Default 90%
 

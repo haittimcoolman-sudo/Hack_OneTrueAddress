@@ -35,6 +35,9 @@
                                 <span class="btn-text">See what you the address qualifies for!</span>
                                 <span class="btn-loader" style="display: none;">Processing...</span>
                             </button>
+                            <button type="button" id="doOverBtn" class="do-over-btn" style="display: none;">
+                                Do Over
+                            </button>
                         </form>
                     </div>
 
@@ -70,6 +73,7 @@
         const submitBtn = document.getElementById('submitBtn');
         const btnText = submitBtn.querySelector('.btn-text');
         const btnLoader = submitBtn.querySelector('.btn-loader');
+        const doOverBtn = document.getElementById('doOverBtn');
         const systemResponseSection = document.getElementById('systemResponse');
         const systemResponseContent = document.getElementById('systemResponseContent');
         const matchedAddressesContainer = document.getElementById('matchedAddresses');
@@ -111,6 +115,7 @@
 
                 if (data.success) {
                     displayResults(data);
+                    doOverBtn.style.display = 'inline-block';
                 } else {
                     showError(data.error || 'An error occurred while matching the address.');
                 }
@@ -122,6 +127,23 @@
                 btnText.style.display = 'inline';
                 btnLoader.style.display = 'none';
             }
+        });
+
+        doOverBtn.addEventListener('click', () => {
+            // Clear the form
+            form.reset();
+            
+            // Hide all results and errors
+            systemResponseSection.style.display = 'none';
+            errorSection.style.display = 'none';
+            matchCount.style.display = 'none';
+            doOverBtn.style.display = 'none';
+            
+            // Reset matched addresses container to empty state
+            matchedAddressesContainer.innerHTML = '<div class="empty-state"><p>Enter an address to see matched results here.</p></div>';
+            
+            // Focus on the address input
+            document.getElementById('addressInput').focus();
         });
 
         function displayResults(data) {
@@ -176,9 +198,9 @@
             
             if (data.match_found && data.matched_address) {
                 // Display matched address in the right column
-                addressesHtml += `<div class="matched-address-card">
+                addressesHtml += `<div class="matched-address-card primary-match">
                     <div class="address-card-header">
-                        <span class="address-number">1</span>
+                        <span class="address-number">Golden Source Match</span>
                         <span class="address-status-badge success">Matched</span>
                     </div>
                     <div class="address-card-body">`;
@@ -192,7 +214,37 @@
                 
                 addressesHtml += `</div></div>`;
                 
-                matchCount.textContent = `1 match found`;
+                // Display Pinellas matches if available
+                if (data.pinellas_matches && data.pinellas_matches.length > 0) {
+                    const headerText = data.pinellas_matches.length > 1 
+                        ? 'Internal Addresses - Duplicate Records found' 
+                        : 'Internal Addresses';
+                    addressesHtml += `<div class="pinellas-section">
+                        <h3 class="pinellas-header">${headerText} (${data.pinellas_matches.length})</h3>`;
+                    
+                    data.pinellas_matches.forEach((addr, index) => {
+                        addressesHtml += `<div class="matched-address-card pinellas-match">
+                            <div class="address-card-header">
+                                <span class="address-number">${index + 1}</span>
+                                <span class="address-status-badge pinellas">Pinellas Match</span>
+                            </div>
+                            <div class="address-card-body">`;
+                        
+                        for (const [key, value] of Object.entries(addr)) {
+                            addressesHtml += `<div class="address-detail">
+                                <span class="address-label">${escapeHtml(key)}:</span>
+                                <span class="address-value">${escapeHtml(value || 'N/A')}</span>
+                            </div>`;
+                        }
+                        
+                        addressesHtml += `</div></div>`;
+                    });
+                    
+                    addressesHtml += `</div>`;
+                }
+                
+                let totalMatches = 1 + (data.pinellas_matches ? data.pinellas_matches.length : 0);
+                matchCount.textContent = `${totalMatches} match${totalMatches > 1 ? 'es' : ''} found (1 Golden Source, ${data.pinellas_matches ? data.pinellas_matches.length : 0} Pinellas)`;
                 matchCount.style.display = 'block';
             } else {
                 addressesHtml = '<div class="empty-state"><p>No matches found.</p></div>';
