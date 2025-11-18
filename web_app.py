@@ -263,6 +263,34 @@ def health():
     """Health check endpoint."""
     return jsonify({'status': 'ok'})
 
+@app.route('/time_saved', methods=['GET'])
+def time_saved():
+    """Get the total time saved by the system."""
+    try:
+        agent = get_agent()
+        result = agent.golden_source.get_time_saved()
+        
+        if result['status'] == 'success':
+            return jsonify({
+                'success': True,
+                'hours_saved': result['hours_saved']
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'hours_saved': 0.0,
+                'error': result.get('error', 'Unknown error')
+            })
+            
+    except Exception as e:
+        error_msg = str(e)
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'hours_saved': 0.0,
+            'error': error_msg
+        }), 500
+
 @app.after_request
 def add_header(response):
     """Add headers to prevent caching of static files during development."""

@@ -66,6 +66,7 @@ http://localhost:5000
 
 The web interface features:
 - **Cool & Gang Communications** branded UI with light/dark theme support
+- **Time Saved Widget** - Real-time display of total hours saved (top right corner)
 - Free-form text input for addresses
 - Fuzzy matching search across Golden Source and Internal tables
 - AI-powered match review and validation by Claude
@@ -176,6 +177,19 @@ When multiple Internal addresses match a single Golden Source address, the syste
 - "Push Updates" button to consolidate and write to database
 - Responsive design for desktop and mobile
 
+## Time Saved Tracking
+
+The system automatically tracks time savings based on the `tpi` (task priority indicator) values:
+- **Scenario 1** (Multiple Internal Matches): 20 minutes per consolidation
+- **Scenario 2** (Single Match Mismatch): 10 minutes per update
+- **Scenario 3** (No Internal Match): 5 minutes per write
+
+The **Time Saved Widget** in the top right corner displays the cumulative time saved by the system:
+- Calculation: `SUM(tpi) / 60` hours
+- Updates in real-time after each successful push
+- Refreshes automatically every 30 seconds
+- Adapts to light/dark theme with smooth animations
+
 ## API Endpoints
 
 The web application provides the following REST endpoints:
@@ -184,6 +198,7 @@ The web application provides the following REST endpoints:
 - `POST /match` - Match an address (returns Golden Source + Internal matches)
 - `POST /push_updates` - Consolidate Internal records and push to `internal_updates`
 - `POST /write_to_internal` - Write Golden Source record when no Internal match exists
+- `GET /time_saved` - Get total hours saved by the system
 - `GET /health` - Health check endpoint
 
 ## Database Requirements

@@ -12,6 +12,17 @@
         ☰
     </button>
 
+    <!-- Time Saved Widget -->
+    <div class="time-saved-widget" id="timeSavedWidget">
+        <div class="time-saved-icon">⏱️</div>
+        <div class="time-saved-content">
+            <div class="time-saved-label">Time Saved</div>
+            <div class="time-saved-value" id="timeSavedValue">
+                <span class="hours-value">--</span> hours
+            </div>
+        </div>
+    </div>
+
     <!-- Settings Menu -->
     <div class="settings-menu" id="settingsMenu">
         <div class="settings-menu-header">
@@ -618,6 +629,9 @@
                     btnLoader.style.display = 'none';
                     pushUpdatesBtn.classList.add('success');
                     
+                    // Refresh time saved widget
+                    fetchTimeSaved();
+                    
                     // Display the consolidated record in the UI
                     displayConsolidatedRecord(data.consolidated_record);
                 } else {
@@ -676,6 +690,9 @@
                     btnText.style.display = 'inline';
                     btnLoader.style.display = 'none';
                     writeToInternalBtn.classList.add('success');
+                    
+                    // Refresh time saved widget
+                    fetchTimeSaved();
                     
                     // Display the written record in the UI
                     displayWrittenRecord(data.written_record);
@@ -786,6 +803,32 @@
             if (confidence >= 50) return 'low';
             return 'very-low';
         }
+
+        // ============================================================================
+        // TIME SAVED WIDGET
+        // ============================================================================
+        
+        async function fetchTimeSaved() {
+            try {
+                const response = await fetch('/time_saved');
+                const data = await response.json();
+                
+                if (data.success) {
+                    const hoursValue = document.querySelector('.hours-value');
+                    hoursValue.textContent = data.hours_saved.toFixed(1);
+                } else {
+                    console.error('Error fetching time saved:', data.error);
+                }
+            } catch (error) {
+                console.error('Network error fetching time saved:', error);
+            }
+        }
+        
+        // Fetch time saved on page load
+        fetchTimeSaved();
+        
+        // Refresh time saved every 30 seconds
+        setInterval(fetchTimeSaved, 30000);
 
         // ============================================================================
         // THEME TOGGLE FUNCTIONALITY

@@ -1266,6 +1266,51 @@ class GoldenSourceConnector:
             if cursor:
                 cursor.close()
     
+    def get_time_saved(self) -> Dict[str, Any]:
+        """
+        Calculate the total time saved by the system based on tpi values in internal_updates table.
+        
+        Returns:
+            Dictionary with 'hours_saved' (float) and 'status'
+        """
+        cursor = None
+        try:
+            cursor = self.connection.cursor()
+            
+            # Query to sum tpi values and convert to hours
+            updates_table = "team_cool_and_gang.internal_updates"
+            table_parts = updates_table.split('.')
+            if len(table_parts) == 2:
+                schema_name, table_name = table_parts
+                quoted_table = f'"{schema_name}"."{table_name}"'
+            else:
+                table_name = updates_table
+                quoted_table = f'"{table_name}"'
+            
+            query = f'SELECT COALESCE(SUM("tpi"), 0) / 60.0 FROM {quoted_table}'
+            
+            cursor.execute(query)
+            result = cursor.fetchone()
+            
+            hours_saved = float(result[0]) if result and result[0] is not None else 0.0
+            
+            return {
+                'status': 'success',
+                'hours_saved': round(hours_saved, 2)
+            }
+            
+        except Exception as e:
+            error_msg = str(e)
+            print(f"  ✗ Error getting time saved: {error_msg}")
+            return {
+                'status': 'error',
+                'error': error_msg,
+                'hours_saved': 0.0
+            }
+        finally:
+            if cursor:
+                cursor.close()
+    
     def close(self):
         """Close the database connection."""
         if self.connection:
