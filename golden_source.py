@@ -1,6 +1,7 @@
 """Module for connecting to and querying the golden source address table."""
 import os
 from typing import List, Dict, Any, Optional, Tuple
+from rapidfuzz import fuzz
 from config import (
     GOLDEN_SOURCE_DB_TYPE,
     GOLDEN_SOURCE_HOST,
@@ -9,7 +10,9 @@ from config import (
     GOLDEN_SOURCE_USER,
     GOLDEN_SOURCE_PASSWORD,
     GOLDEN_SOURCE_TABLE,
-    PINELLAS_TABLE
+    GOLDEN_SOURCE_MATCH_TABLE,
+    INTERNAL_MATCH_TABLE,
+    FUZZY_MATCH_THRESHOLD
 )
 
 
@@ -295,15 +298,15 @@ class GoldenSourceConnector:
             if cursor:
                 cursor.close()
     
-    def _get_pinellas_column_mapping(self, cursor, schema_name: Optional[str], table_name: str) -> Tuple[Dict[str, Optional[str]], List[str]]:
+    def _get_internal_column_mapping(self, cursor, schema_name: Optional[str], table_name: str) -> Tuple[Dict[str, Optional[str]], List[str]]:
         """
-        Discover the column names in the Pinellas table and map them to standard address fields.
+        Discover the column names in the Internal table and map them to standard address fields.
         
         Returns a tuple of:
         - Dictionary with keys: 'address', 'city', 'state', 'zip' (mapped to actual column names)
         - List of all column names in the table (in order)
         """
-        # Get all column names from the Pinellas table
+        # Get all column names from the Internal table
         if self.db_type.lower() == "postgresql":
             if schema_name:
                 cursor.execute("""
@@ -321,10 +324,10 @@ class GoldenSourceConnector:
                 """, (table_name,))
             columns = [row[0] for row in cursor.fetchall()]
         elif self.db_type.lower() == "mysql":
-            cursor.execute(f"DESCRIBE {PINELLAS_TABLE}")
+            cursor.execute(f"DESCRIBE {INTERNAL_MATCH_TABLE}")
             columns = [row[0] for row in cursor.fetchall()]
         else:  # sqlite
-            cursor.execute(f"PRAGMA table_info({PINELLAS_TABLE})")
+            cursor.execute(f"PRAGMA table_info({INTERNAL_MATCH_TABLE})")
             columns = [row[1] for row in cursor.fetchall()]
         
         # Convert to lowercase for case-insensitive matching
@@ -379,7 +382,7 @@ class GoldenSourceConnector:
             if mapping['zip']:
                 break
         
-        print(f"\n[Pinellas Table Column Mapping]")
+        print(f"\n[Internal Table Column Mapping]")
         print(f"  Available columns: {', '.join(columns)}")
         print(f"  Mapped columns:")
         print(f"    - Address field: {mapping['address']}")
@@ -389,9 +392,9 @@ class GoldenSourceConnector:
         
         return mapping, columns
     
-    def get_pinellas_matches(self, golden_address: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def get_internal_matches(self, golden_address: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
-        Query pinellas_fl_baddatascenarios table to find addresses matching the golden source address.
+        Query internal table to find addresses matching the golden source address.
         Match criteria: street number AND street name (core, without type) AND state must match.
         This allows matching addresses with different street types (e.g., "LN" vs "Rd", "St" vs "Street").
         
@@ -399,31 +402,31 @@ class GoldenSourceConnector:
             golden_address: The matched address from golden_source table
             
         Returns:
-            List of matching addresses from pinellas_fl_baddatascenarios table
+            List of matching addresses from internal table
         """
         cursor = None
         try:
             cursor = self.connection.cursor()
             
             # Parse schema and table name if schema-qualified
-            table_parts = PINELLAS_TABLE.split('.')
+            table_parts = INTERNAL_MATCH_TABLE.split('.')
             if len(table_parts) == 2:
                 schema_name, table_name = table_parts
                 quoted_table = f'"{schema_name}"."{table_name}"'
             else:
                 schema_name = None
-                table_name = PINELLAS_TABLE
+                table_name = INTERNAL_MATCH_TABLE
                 quoted_table = f'"{table_name}"'
             
-            # Discover the column mapping for the Pinellas table
-            column_mapping, all_columns = self._get_pinellas_column_mapping(cursor, schema_name, table_name)
+            # Discover the column mapping for the Internal table
+            column_mapping, all_columns = self._get_internal_column_mapping(cursor, schema_name, table_name)
             
             # Check if we found the required columns
             if not column_mapping['address']:
-                print("  ⚠️  Warning: Could not identify address column in Pinellas table")
+                print("  ⚠️  Warning: Could not identify address column in Internal table")
                 return []
             if not column_mapping['state']:
-                print("  ⚠️  Warning: Could not identify state column in Pinellas table")
+                print("  ⚠️  Warning: Could not identify state column in Internal table")
                 return []
             
             # Extract street number, street name, and state from golden address
@@ -480,7 +483,7 @@ class GoldenSourceConnector:
                 # Only one word, use as-is
                 street_name_core = street_name_full
             
-            print(f"\n[Pinellas Match Debug]")
+            print(f"\n[Internal Match Debug]")
             print(f"  Original address1: {address1}")
             print(f"  Extracted street number: {street_number}")
             print(f"  Full street name: {street_name_full}")
@@ -516,7 +519,7 @@ class GoldenSourceConnector:
             query = f'SELECT * FROM {quoted_table}{where_clause}'
             
             # Log the query for debugging
-            print(f"\nPinellas Query Generated:")
+            print(f"\nInternal Query Generated:")
             print(f"Query: {query}")
             print(f"Params: {params}")
             print("-" * 60)
@@ -530,22 +533,22 @@ class GoldenSourceConnector:
                 match_dict = {all_columns[i]: row[i] for i in range(len(all_columns))}
                 matches.append(match_dict)
             
-            print(f"  ✓ Found {len(matches)} matching address(es) in Pinellas table")
+            print(f"  ✓ Found {len(matches)} matching address(es) in Internal table")
             
             return matches
             
         except Exception as e:
             error_msg = str(e)
-            print(f"Error querying Pinellas table: {error_msg}")
+            print(f"Error querying Internal table: {error_msg}")
             # Return empty list instead of raising error to avoid breaking the main flow
             return []
         finally:
             if cursor:
                 cursor.close()
     
-    def consolidate_pinellas_records(self, pinellas_matches: List[Dict[str, Any]], golden_source_address: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def consolidate_internal_records(self, internal_matches: List[Dict[str, Any]], golden_source_address: Optional[Dict[str, Any]] = None, scenario: int = 1) -> Dict[str, Any]:
         """
-        Consolidate multiple Pinellas records into a single record based on business rules.
+        Consolidate multiple Internal records into a single record based on business rules.
         Address fields are taken from the Golden Source, while other fields follow the consolidation rules.
         
         Rules:
@@ -557,17 +560,18 @@ class GoldenSourceConnector:
         6. If multiple Active Customers or multiple Fiber Media records, return error for manual review.
         
         Args:
-            pinellas_matches: List of address dictionaries from pinellas_fl_baddatascenarios
+            internal_matches: List of address dictionaries from internal table
             golden_source_address: Optional Golden Source address to use for address fields
+            scenario: Scenario identifier (1=Multiple Matches, 2=Single Match Mismatch, not used here but for consistency)
             
         Returns:
             Dictionary with 'status' and either 'consolidated_record' or 'error' message
         """
-        if not pinellas_matches or len(pinellas_matches) == 0:
+        if not internal_matches or len(internal_matches) == 0:
             return {"status": "error", "error": "No records to consolidate"}
         
-        if len(pinellas_matches) == 1:
-            consolidated_record = pinellas_matches[0].copy()
+        if len(internal_matches) == 1:
+            consolidated_record = internal_matches[0].copy()
             
             # Apply Golden Source address even for single record
             if golden_source_address:
@@ -578,6 +582,7 @@ class GoldenSourceConnector:
                     'address2': golden_source_address.get('address2'),
                     'state': golden_source_address.get('state'),
                     'zipcode': golden_source_address.get('zipcode'),
+                    'MasterAddress': golden_source_address.get('MasterAddress'),
                 }
                 
                 city_value = golden_source_address.get('Mailing City') or golden_source_address.get('city')
@@ -596,7 +601,8 @@ class GoldenSourceConnector:
                     'address1': ['address1', 'address_1', 'address 1', 'address', 'street', 'street address', 'street_address'],
                     'address2': ['address2', 'address_2', 'address 2', 'address line 2', 'address_line_2'],
                     'state': ['state', 'st'],
-                    'zipcode': ['zipcode', 'zip_code', 'zip code', 'zip', 'postal', 'postalcode', 'postal_code']
+                    'zipcode': ['zipcode', 'zip_code', 'zip code', 'zip', 'postal', 'postalcode', 'postal_code'],
+                    'MasterAddress': ['MasterAddress', 'master_address', 'master address']
                 }
                 
                 for field_name, field_value in golden_address_fields.items():
@@ -634,7 +640,13 @@ class GoldenSourceConnector:
                 
                 print(f"  ✓ Applied Golden Source address to single record")
             
-            return {"status": "success", "consolidated_record": consolidated_record, "message": "Single record, no consolidation needed"}
+            # Filter out metadata fields (starting with _) before returning
+            filtered_consolidated_record = {k: v for k, v in consolidated_record.items() if not k.startswith('_')}
+            if len(filtered_consolidated_record) < len(consolidated_record):
+                removed_fields = [k for k in consolidated_record.keys() if k.startswith('_')]
+                print(f"  Filtered out metadata fields from single record: {removed_fields}")
+            
+            return {"status": "success", "consolidated_record": filtered_consolidated_record, "message": "Single record, no consolidation needed"}
         
         # Identify records with Active Customer (assuming column names might vary)
         # Common column names: 'active_customer', 'Active Customer', 'ActiveCustomer', 'customer_status'
@@ -644,7 +656,7 @@ class GoldenSourceConnector:
         records_with_engineering_y = []
         
         # Try to identify column names dynamically
-        sample_record = pinellas_matches[0]
+        sample_record = internal_matches[0]
         active_customer_col = None
         media_type_col = None
         exclusion_col = None
@@ -669,7 +681,7 @@ class GoldenSourceConnector:
         print(f"  Engineering Review Column: {engineering_col}")
         
         # Categorize records
-        for record in pinellas_matches:
+        for record in internal_matches:
             # Check for active customer
             if active_customer_col and str(record.get(active_customer_col, '')).strip().upper() in ['Y', 'YES', 'TRUE', '1']:
                 active_customer_records.append(record)
@@ -729,7 +741,7 @@ class GoldenSourceConnector:
         
         # If still no base record, use the first record
         if consolidated_record is None:
-            consolidated_record = pinellas_matches[0].copy()
+            consolidated_record = internal_matches[0].copy()
             print(f"  Using first record as base")
         
         # Rule 3: Update Exclusion and Engineering Review flags to 'Y' if any record has 'Y'
@@ -758,6 +770,7 @@ class GoldenSourceConnector:
                 'address2': golden_source_address.get('address2'),
                 'state': golden_source_address.get('state'),
                 'zipcode': golden_source_address.get('zipcode'),
+                'MasterAddress': golden_source_address.get('MasterAddress'),
             }
             
             # Handle city field which might be named differently
@@ -777,7 +790,8 @@ class GoldenSourceConnector:
                 'address1': ['address1', 'address_1', 'address 1', 'address', 'street', 'street address', 'street_address'],
                 'address2': ['address2', 'address_2', 'address 2', 'address line 2', 'address_line_2'],
                 'state': ['state', 'st'],
-                'zipcode': ['zipcode', 'zip_code', 'zip code', 'zip', 'postal', 'postalcode', 'postal_code']
+                'zipcode': ['zipcode', 'zip_code', 'zip code', 'zip', 'postal', 'postalcode', 'postal_code'],
+                'MasterAddress': ['MasterAddress', 'master_address', 'master address']
             }
             
             for field_name, field_value in golden_address_fields.items():
@@ -816,10 +830,16 @@ class GoldenSourceConnector:
             
             print(f"  ✓ Successfully applied Golden Source address to consolidated record")
         
+        # Filter out metadata fields (starting with _) before returning
+        filtered_consolidated_record = {k: v for k, v in consolidated_record.items() if not k.startswith('_')}
+        if len(filtered_consolidated_record) < len(consolidated_record):
+            removed_fields = [k for k in consolidated_record.keys() if k.startswith('_')]
+            print(f"  Filtered out metadata fields from consolidated record: {removed_fields}")
+        
         return {
             "status": "success",
-            "consolidated_record": consolidated_record,
-            "message": f"Consolidated {len(pinellas_matches)} records successfully"
+            "consolidated_record": filtered_consolidated_record,
+            "message": f"Consolidated {len(internal_matches)} records successfully"
         }
     
     def _map_golden_source_to_internal(self, golden_source_record: Dict[str, Any]) -> Dict[str, Any]:
@@ -838,6 +858,12 @@ class GoldenSourceConnector:
         print(f"\n[Mapping Golden Source to Internal Schema]")
         print(f"  Input record keys: {list(golden_source_record.keys())}")
         
+        # Filter out metadata fields (starting with _)
+        filtered_record = {k: v for k, v in golden_source_record.items() if not k.startswith('_')}
+        if len(filtered_record) < len(golden_source_record):
+            removed_fields = [k for k in golden_source_record.keys() if k.startswith('_')]
+            print(f"  Filtered out metadata fields: {removed_fields}")
+        
         # Define the mapping from Golden Source to Internal column names
         column_mapping = {
             'address1': 'Address',
@@ -845,12 +871,13 @@ class GoldenSourceConnector:
             'Mailing City': 'City',
             'city': 'City',
             'state': 'State',
-            'zipcode': 'Zipcode'
+            'zipcode': 'Zipcode',
+            'MasterAddress': 'MasterAddress'  # Keep same name in both tables
         }
         
         internal_record = {}
         
-        for gs_col, gs_value in golden_source_record.items():
+        for gs_col, gs_value in filtered_record.items():
             # Try to find the corresponding internal column name
             internal_col = column_mapping.get(gs_col)
             
@@ -864,7 +891,7 @@ class GoldenSourceConnector:
             else:
                 # Column doesn't have a mapping, check if it's already in internal format
                 # (in case the record already has some internal column names)
-                if gs_col in ['Address', 'City', 'State', 'Zipcode', 'Media', 'Active Customer', 'Exclusion', 'Engineering Review']:
+                if gs_col in ['Address', 'City', 'State', 'Zipcode', 'MasterAddress', 'Media', 'Active Customer', 'Exclusion', 'Engineering Review']:
                     internal_record[gs_col] = gs_value
                     print(f"  Keeping '{gs_col}' = '{gs_value}' (already in internal format)")
                 else:
@@ -875,12 +902,13 @@ class GoldenSourceConnector:
         
         return internal_record
     
-    def push_to_internal_updates(self, consolidated_record: Dict[str, Any]) -> Dict[str, Any]:
+    def push_to_internal_updates(self, consolidated_record: Dict[str, Any], scenario: int = 1) -> Dict[str, Any]:
         """
         Write a consolidated record to the team_cool_and_gang.internal_updates table.
         
         Args:
             consolidated_record: The consolidated address record to insert
+            scenario: Scenario identifier (1=Multiple Matches, 2=Single Match Mismatch, 3=No Internal Match)
             
         Returns:
             Dictionary with 'status' and 'message' or 'error'
@@ -899,9 +927,47 @@ class GoldenSourceConnector:
                 table_name = updates_table
                 quoted_table = f'"{table_name}"'
             
-            # Build INSERT statement
-            columns = list(consolidated_record.keys())
-            values = [consolidated_record[col] for col in columns]
+            # Filter out metadata fields (starting with _) before inserting
+            filtered_record = {k: v for k, v in consolidated_record.items() if not k.startswith('_')}
+            
+            # Add Agent Action and tpi based on scenario
+            scenario_mapping = {
+                1: {
+                    'Agent Action': 'Multiple Internal Matches (Consolidation Required)',
+                    'tpi': 20
+                },
+                2: {
+                    'Agent Action': 'Single Internal Match with MasterAddress Mismatch',
+                    'tpi': 10
+                },
+                3: {
+                    'Agent Action': 'No Internal Match (Golden Source Only)',
+                    'tpi': 5
+                }
+            }
+            
+            scenario_data = scenario_mapping.get(scenario, scenario_mapping[1])
+            filtered_record['Agent Action'] = scenario_data['Agent Action']
+            filtered_record['tpi'] = scenario_data['tpi']
+            
+            # Add current datetime
+            from datetime import datetime
+            filtered_record['datetime'] = datetime.now()
+            
+            print(f"\n[Scenario Metadata]")
+            print(f"  Scenario: {scenario}")
+            print(f"  Agent Action: {filtered_record['Agent Action']}")
+            print(f"  tpi: {filtered_record['tpi']}")
+            print(f"  datetime: {filtered_record['datetime']}")
+            
+            print(f"\n[Filtering Record for Insert]")
+            print(f"  Original fields: {list(consolidated_record.keys())}")
+            print(f"  Filtered fields: {list(filtered_record.keys())}")
+            print(f"  Removed fields: {[k for k in consolidated_record.keys() if k.startswith('_')]}")
+            
+            # Build INSERT statement with filtered fields
+            columns = list(filtered_record.keys())
+            values = [filtered_record[col] for col in columns]
             
             # Create placeholders for parameterized query
             placeholders = ', '.join(['%s'] * len(columns))
@@ -941,6 +1007,252 @@ class GoldenSourceConnector:
                 "status": "error",
                 "error": f"Failed to push update: {error_msg}"
             }
+        finally:
+            if cursor:
+                cursor.close()
+    
+    def fuzzy_match_addresses(self, input_address: str, threshold: Optional[float] = None) -> Dict[str, Any]:
+        """
+        Perform fuzzy matching search on MasterAddress column in both Golden Source and Internal tables.
+        Returns results separately for each table.
+        
+        Args:
+            input_address: The address string to search for
+            threshold: Minimum similarity score (0-100). Defaults to FUZZY_MATCH_THRESHOLD from config.
+            
+        Returns:
+            Dictionary with 'golden_source_matches' and 'internal_matches', each containing list of matches
+        """
+        if threshold is None:
+            threshold = FUZZY_MATCH_THRESHOLD
+        
+        # Enforce minimum threshold floor
+        from config import FUZZY_MATCH_MIN_THRESHOLD
+        if threshold < FUZZY_MATCH_MIN_THRESHOLD:
+            print(f"⚠️  Warning: Threshold {threshold}% is below minimum. Adjusting to {FUZZY_MATCH_MIN_THRESHOLD}%")
+            threshold = FUZZY_MATCH_MIN_THRESHOLD
+        
+        print(f"\n{'='*60}")
+        print(f"FUZZY MATCH SEARCH")
+        print(f"{'='*60}")
+        print(f"Input Address: {input_address}")
+        print(f"Similarity Threshold: {threshold}%")
+        print(f"Searching in tables:")
+        print(f"  1. Golden Source: {GOLDEN_SOURCE_MATCH_TABLE}")
+        print(f"  2. Internal: {INTERNAL_MATCH_TABLE}")
+        print(f"{'='*60}\n")
+        
+        # Search Golden Source table
+        golden_source_matches = self._fuzzy_search_table(input_address, GOLDEN_SOURCE_MATCH_TABLE, threshold)
+        for match in golden_source_matches:
+            match['_source_table'] = GOLDEN_SOURCE_MATCH_TABLE
+            match['_source_type'] = 'golden_source'
+        
+        # Search Internal table
+        internal_matches = self._fuzzy_search_table(input_address, INTERNAL_MATCH_TABLE, threshold)
+        for match in internal_matches:
+            match['_source_table'] = INTERNAL_MATCH_TABLE
+            match['_source_type'] = 'internal'
+        
+        # Sort each list by similarity score (highest first)
+        golden_source_matches.sort(key=lambda x: x.get('_similarity_score', 0), reverse=True)
+        internal_matches.sort(key=lambda x: x.get('_similarity_score', 0), reverse=True)
+        
+        print(f"\nFuzzy Match Results:")
+        print(f"  Golden Source matches: {len(golden_source_matches)}")
+        print(f"  Internal matches: {len(internal_matches)}")
+        print(f"  Total matches: {len(golden_source_matches) + len(internal_matches)}")
+        
+        if golden_source_matches:
+            print(f"\n  Top Golden Source matches:")
+            print("-" * 80)
+            for idx, match in enumerate(golden_source_matches[:5], 1):
+                master_addr = match.get('MasterAddress', 'N/A')
+                score = match.get('_similarity_score', 0)
+                print(f"  {idx}. [{score:.1f}%] {master_addr}")
+            print("-" * 80)
+        
+        if internal_matches:
+            print(f"\n  Top Internal matches:")
+            print("-" * 80)
+            for idx, match in enumerate(internal_matches[:5], 1):
+                master_addr = match.get('MasterAddress', 'N/A')
+                score = match.get('_similarity_score', 0)
+                print(f"  {idx}. [{score:.1f}%] {master_addr}")
+            print("-" * 80)
+        
+        return {
+            'golden_source_matches': golden_source_matches,
+            'internal_matches': internal_matches,
+            'total_matches': len(golden_source_matches) + len(internal_matches)
+        }
+    
+    def _extract_street_number(self, address: str) -> Optional[str]:
+        """
+        Extract street number from an address string.
+        
+        Args:
+            address: Address string to extract from
+            
+        Returns:
+            Street number as string, or None if not found
+        """
+        import re
+        # Match leading digits, possibly followed by letter (e.g., "123A")
+        match = re.match(r'^(\d+[A-Za-z]?)', address.strip())
+        if match:
+            return match.group(1).upper()
+        return None
+    
+    def _clean_address_for_fuzzy_match(self, address: str) -> str:
+        """
+        Clean address by removing zip code and state for fuzzy matching.
+        
+        Args:
+            address: Address string to clean
+            
+        Returns:
+            Cleaned address string
+        """
+        import re
+        
+        # Remove common state abbreviations (2 letter codes at the end)
+        # Pattern: Remove state codes like "FL", "NY", "CA", etc.
+        address = re.sub(r'\b[A-Z]{2}\b\s*$', '', address)
+        address = re.sub(r',\s*[A-Z]{2}\b', '', address)
+        
+        # Remove zip codes (5 digits or 5+4 format)
+        address = re.sub(r'\b\d{5}(-\d{4})?\b', '', address)
+        
+        # Remove extra whitespace and commas
+        address = re.sub(r'\s+', ' ', address)
+        address = re.sub(r',+', ',', address)
+        address = address.strip(' ,')
+        
+        return address
+    
+    def _fuzzy_search_table(self, input_address: str, table_name: str, threshold: float) -> List[Dict[str, Any]]:
+        """
+        Search a single table for fuzzy matches on MasterAddress column.
+        Street numbers must match exactly. Zip codes and states are removed before fuzzy matching.
+        
+        Args:
+            input_address: The address string to search for
+            table_name: Name of the table to search
+            threshold: Minimum similarity score (0-100)
+            
+        Returns:
+            List of matching address dictionaries with similarity scores
+        """
+        cursor = None
+        try:
+            cursor = self.connection.cursor()
+            
+            # Parse schema and table name if schema-qualified
+            table_parts = table_name.split('.')
+            if len(table_parts) == 2:
+                schema_name, table_only = table_parts
+                quoted_table = f'"{schema_name}"."{table_only}"'
+            else:
+                schema_name = None
+                table_only = table_name
+                quoted_table = f'"{table_only}"'
+            
+            # First, check if MasterAddress column exists in the table
+            if self.db_type.lower() == "postgresql":
+                if schema_name:
+                    cursor.execute("""
+                        SELECT column_name 
+                        FROM information_schema.columns 
+                        WHERE table_schema = %s AND table_name = %s
+                        ORDER BY ordinal_position
+                    """, (schema_name, table_only))
+                else:
+                    cursor.execute("""
+                        SELECT column_name 
+                        FROM information_schema.columns 
+                        WHERE table_name = %s
+                        ORDER BY ordinal_position
+                    """, (table_only,))
+                columns = [row[0] for row in cursor.fetchall()]
+            elif self.db_type.lower() == "mysql":
+                cursor.execute(f"DESCRIBE {table_name}")
+                columns = [row[0] for row in cursor.fetchall()]
+            else:  # sqlite
+                cursor.execute(f"PRAGMA table_info({table_name})")
+                columns = [row[1] for row in cursor.fetchall()]
+            
+            # Check if MasterAddress exists
+            if 'MasterAddress' not in columns:
+                print(f"  ⚠️  Warning: MasterAddress column not found in {table_name}")
+                print(f"     Available columns: {', '.join(columns)}")
+                return []
+            
+            # Extract street number from input address
+            input_street_number = self._extract_street_number(input_address)
+            if not input_street_number:
+                print(f"  ⚠️  Warning: Could not extract street number from input address: {input_address}")
+                return []
+            
+            print(f"\n  Input street number: {input_street_number}")
+            
+            # Clean input address (remove zip and state)
+            cleaned_input = self._clean_address_for_fuzzy_match(input_address)
+            print(f"  Cleaned input address: {cleaned_input}")
+            
+            # Fetch all records with MasterAddress
+            # We need to fetch all and do fuzzy matching in Python since SQL doesn't have built-in fuzzy matching
+            query = f'SELECT * FROM {quoted_table} WHERE "MasterAddress" IS NOT NULL AND "MasterAddress" != \'\''
+            
+            print(f"\nQuerying {table_name}...")
+            print(f"Query: {query}")
+            
+            cursor.execute(query)
+            rows = cursor.fetchall()
+            
+            print(f"  Fetched {len(rows)} records with MasterAddress")
+            
+            # Perform fuzzy matching on each record
+            matches = []
+            street_number_matches = 0
+            
+            for row in rows:
+                row_dict = {columns[i]: row[i] for i in range(len(columns))}
+                master_address = str(row_dict.get('MasterAddress', '')).strip()
+                
+                if not master_address:
+                    continue
+                
+                # Extract street number from master address
+                master_street_number = self._extract_street_number(master_address)
+                
+                # Street numbers must match exactly
+                if master_street_number != input_street_number:
+                    continue
+                
+                street_number_matches += 1
+                
+                # Clean master address (remove zip and state)
+                cleaned_master = self._clean_address_for_fuzzy_match(master_address)
+                
+                # Calculate similarity score using rapidfuzz on cleaned addresses
+                # Using token_sort_ratio which handles word order differences
+                similarity = fuzz.token_sort_ratio(cleaned_input.lower(), cleaned_master.lower())
+                
+                if similarity >= threshold:
+                    row_dict['_similarity_score'] = similarity
+                    row_dict['_cleaned_address'] = cleaned_master  # For debugging
+                    matches.append(row_dict)
+            
+            print(f"  Records with matching street number ({input_street_number}): {street_number_matches}")
+            print(f"  Found {len(matches)} matches above {threshold}% threshold (after fuzzy match)")
+            
+            return matches
+            
+        except Exception as e:
+            error_msg = str(e)
+            print(f"  ✗ Error searching {table_name}: {error_msg}")
+            return []
         finally:
             if cursor:
                 cursor.close()

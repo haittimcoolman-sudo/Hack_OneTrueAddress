@@ -17,10 +17,14 @@ GOLDEN_SOURCE_USER = os.getenv("GOLDEN_SOURCE_USER")
 GOLDEN_SOURCE_PASSWORD = os.getenv("GOLDEN_SOURCE_PASSWORD")
 GOLDEN_SOURCE_TABLE = os.getenv("GOLDEN_SOURCE_TABLE", "addresses")
 
-# Pinellas FL Bad Data Scenarios Table Configuration
-# Note: Use schema-qualified name if needed (e.g., "team_cool_and_gang.pinellas_fl_baddatascenarios")
-PINELLAS_TABLE = os.getenv("PINELLAS_TABLE", "team_cool_and_gang.pinellas_fl_baddatascenarios")
+# Golden Source and Internal Tables Configuration
+GOLDEN_SOURCE_MATCH_TABLE = os.getenv("GOLDEN_SOURCE_MATCH_TABLE", "team_cool_and_gang.pinellas_fl")
+INTERNAL_MATCH_TABLE = os.getenv("INTERNAL_MATCH_TABLE", "team_cool_and_gang.pinellas_fl_baddatascenarios")
 
 # Confidence Threshold Configuration
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "90.0"))  # Default 90%
+
+# Fuzzy Matching Configuration
+FUZZY_MATCH_THRESHOLD = float(os.getenv("FUZZY_MATCH_THRESHOLD", "95.0"))  # Default 95% similarity
+FUZZY_MATCH_MIN_THRESHOLD = 75.0  # Minimum allowed threshold (floor)
 

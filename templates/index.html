@@ -7,12 +7,52 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+    <!-- Settings Button -->
+    <button class="settings-btn" id="settingsBtn" aria-label="Settings">
+        ☰
+    </button>
+
+    <!-- Settings Menu -->
+    <div class="settings-menu" id="settingsMenu">
+        <div class="settings-menu-header">
+            <h3>Settings</h3>
+            <button class="close-settings-btn" id="closeSettingsBtn" aria-label="Close settings">×</button>
+        </div>
+        <div class="settings-menu-body">
+            <div class="settings-section">
+                <h4>Theme</h4>
+                <div class="theme-options">
+                    <label class="theme-option">
+                        <input type="radio" name="theme" value="light" checked>
+                        <span class="theme-option-label">
+                            <span class="theme-icon">☀️</span>
+                            <div>
+                                <div class="theme-icon-text">Light</div>
+                                <div class="theme-name">Bright and colorful</div>
+                            </div>
+                        </span>
+                    </label>
+                    <label class="theme-option">
+                        <input type="radio" name="theme" value="dark">
+                        <span class="theme-option-label">
+                            <span class="theme-icon">🌙</span>
+                            <div>
+                                <div class="theme-icon-text">Dark</div>
+                                <div class="theme-name">Easy on the eyes</div>
+                            </div>
+                        </span>
+                    </label>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="container">
         <header>
             <div class="logo-container">
                 <img src="{{ url_for('static', filename='logo.png') }}" alt="Cool & Gang Communications Logo" class="company-logo" onerror="this.style.display='none'">
             </div>
-            <h1 class="company-name">One True Address</h1>
+            <h1 class="company-name"></h1>
             <p class="subtitle"></p>
         </header>
         <main>
@@ -31,6 +71,27 @@
                                     required
                                 ></textarea>
                             </div>
+                            
+                            <div class="form-group slider-group">
+                                <label for="thresholdSlider">
+                                    Fuzzy Match Threshold: <span id="thresholdValue">95</span>%
+                                </label>
+                                <input 
+                                    type="range" 
+                                    id="thresholdSlider" 
+                                    name="threshold" 
+                                    min="75" 
+                                    max="100" 
+                                    value="95" 
+                                    step="1"
+                                    class="threshold-slider"
+                                >
+                                <div class="slider-labels">
+                                    <span>75% (More Matches)</span>
+                                    <span>100% (Exact Matches)</span>
+                                </div>
+                            </div>
+                            
                             <button type="submit" id="submitBtn" class="submit-btn">
                                 <span class="btn-text">Search For Your Address</span>
                                 <span class="btn-loader" style="display: none;">Processing...</span>
@@ -80,12 +141,20 @@
         const matchCount = document.getElementById('matchCount');
         const errorSection = document.getElementById('error');
         const errorMessage = document.getElementById('errorMessage');
+        const thresholdSlider = document.getElementById('thresholdSlider');
+        const thresholdValue = document.getElementById('thresholdValue');
+
+        // Update threshold value display when slider changes
+        thresholdSlider.addEventListener('input', (e) => {
+            thresholdValue.textContent = e.target.value;
+        });
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             
             const addressInput = document.getElementById('addressInput');
             const address = addressInput.value.trim();
+            const threshold = parseFloat(thresholdSlider.value);
             
             if (!address) {
                 showError('Please enter an address to match.');
@@ -108,7 +177,10 @@
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ address: address })
+                    body: JSON.stringify({ 
+                        address: address,
+                        threshold: threshold
+                    })
                 });
 
                 const data = await response.json();
@@ -117,7 +189,7 @@
                 console.log('Match Response Data:');
                 console.log('  Match found:', data.match_found);
                 console.log('  Matched address:', data.matched_address);
-                console.log('  Pinellas matches:', data.pinellas_matches);
+                console.log('  Internal matches:', data.internal_matches);
 
                 if (data.success) {
                     displayResults(data);
@@ -202,119 +274,231 @@
             // Right Column: Matched Addresses
             let addressesHtml = '';
             
-            if (data.match_found && data.matched_address) {
-                // Display matched address in the right column
-                addressesHtml += `<div class="matched-address-card primary-match">
-                    <div class="address-card-header">
-                        <span class="address-number">Golden Source Match</span>
-                        <span class="address-status-badge success">Matched</span>
-                    </div>
-                    <div class="address-card-body">`;
-                
-                // Display fields in specific order: address1, address2, City, state, zipcode
-                // Then display any remaining fields
-                const priorityFields = ['address1', 'address2', 'Mailing City', 'state', 'zipcode'];
-                const displayedFields = new Set();
-                
-                // Field label mapping for display
-                const fieldLabels = {
-                    'address1': 'Address1',
-                    'address2': 'Address2',
-                    'Mailing City': 'City',
-                    'state': 'State',
-                    'zipcode': 'Zipcode'
-                };
-                
-                // First, display priority fields in order
-                for (const key of priorityFields) {
-                    if (key in data.matched_address) {
-                        // Use custom label or default to the key
-                        const displayLabel = fieldLabels[key] || key;
-                        addressesHtml += `<div class="address-detail">
-                            <span class="address-label">${escapeHtml(displayLabel)}:</span>
-                            <span class="address-value">${escapeHtml(data.matched_address[key] || 'N/A')}</span>
-                        </div>`;
-                        displayedFields.add(key);
-                    }
-                }
-                
-                // Then display all remaining fields
-                for (const [key, value] of Object.entries(data.matched_address)) {
-                    if (!displayedFields.has(key)) {
-                        addressesHtml += `<div class="address-detail">
-                            <span class="address-label">${escapeHtml(key)}:</span>
-                            <span class="address-value">${escapeHtml(value || 'N/A')}</span>
-                        </div>`;
-                    }
-                }
-                
-                addressesHtml += `</div></div>`;
-                
-                // Check if exact match exists
-                const isExactMatch = data.exact_match_info && data.exact_match_info.is_exact_match;
-                const noInternalMatch = data.no_internal_match;
-                const hasSingleInternalRecord = data.pinellas_matches && data.pinellas_matches.length === 1;
-                
-                // Display exact match message only if found AND there's only a single internal record
-                if (isExactMatch && hasSingleInternalRecord) {
-                    addressesHtml += `<div class="exact-match-message">
-                        <div class="exact-match-icon">✓</div>
-                        <div class="exact-match-text">
-                            <h3>Exact Match Found!</h3>
-                            <p>The Golden Source address exactly matches an Internal Address. No update is needed.</p>
-                        </div>
-                    </div>`;
-                }
-                
-                // Display Pinellas matches if available
-                if (data.pinellas_matches && data.pinellas_matches.length > 0) {
-                    const headerText = data.pinellas_matches.length > 1 
-                        ? 'Internal Addresses - Duplicate Records found' 
-                        : 'Internal Addresses';
-                    addressesHtml += `<div class="pinellas-section">
-                        <h3 class="pinellas-header">${headerText} (${data.pinellas_matches.length})</h3>`;
+            console.log('Match found:', data.match_found);
+            console.log('Matched address:', data.matched_address);
+            console.log('Golden source matches:', data.golden_source_matches);
+            console.log('Internal matches:', data.internal_matches);
+            
+            if (data.match_found) {
+                // Display "Exact Match Found" message only if single internal match AND MasterAddress matches Golden Source
+                if (data.internal_matches && data.internal_matches.length === 1 && 
+                    data.golden_source_matches && data.golden_source_matches.length > 0) {
                     
-                    data.pinellas_matches.forEach((addr, index) => {
-                        addressesHtml += `<div class="matched-address-card pinellas-match">
+                    const goldenMasterAddress = data.golden_source_matches[0].MasterAddress;
+                    const internalMasterAddress = data.internal_matches[0].MasterAddress;
+                    
+                    console.log('Checking for exact match:');
+                    console.log('  Golden Source MasterAddress:', goldenMasterAddress);
+                    console.log('  Internal MasterAddress:', internalMasterAddress);
+                    
+                    if (goldenMasterAddress && internalMasterAddress && 
+                        goldenMasterAddress.trim() === internalMasterAddress.trim()) {
+                        console.log('  ✓ Exact match confirmed - MasterAddresses are identical');
+                        addressesHtml += `
+                        <div class="exact-match-message">
+                            <div class="exact-match-icon">✓</div>
+                            <div class="exact-match-text">
+                                <h3>Exact Match Found</h3>
+                                <p>MasterAddress in Golden Source exactly matches the Internal record. No updates needed.</p>
+                            </div>
+                        </div>`;
+                    } else {
+                        console.log('  ✗ Not an exact match - MasterAddresses differ');
+                    }
+                }
+                
+                // Display Golden Source matches section
+                console.log('Checking Golden Source section - has_golden_source:', data.has_golden_source);
+                if (data.has_golden_source !== false) {
+                    if (data.golden_source_matches && data.golden_source_matches.length > 0) {
+                        const headerText = 'Golden Source Matches';
+                        addressesHtml += `<div class="golden-source-section">
+                            <h3 class="golden-source-header">${headerText} (${data.golden_source_matches.length})</h3>`;
+                    
+                    // Define the specific column order for Golden Source table (exact column names from database)
+                    const goldenSourceColumnOrder = [
+                        'address1', 'address2', 'Mailing City', 'state', 'zipcode', 
+                        'MasterAddress', 'last_edited_date'
+                    ];
+                    
+                    // Field label mapping for prettier display
+                    const goldenSourceLabelMap = {
+                        'address1': 'Address1',
+                        'address2': 'Address2',
+                        'Mailing City': 'City',
+                        'state': 'State',
+                        'zipcode': 'Zipcode',
+                        'last_edited_date': 'Last Edited Date'
+                    };
+                    
+                    data.golden_source_matches.forEach((addr, index) => {
+                        const score = addr._similarity_score || 0;
+                        console.log(`Golden Source match ${index + 1}: score=${score.toFixed(1)}%, has AI analysis=${!!addr._ai_analysis}`);
+                        if (addr._ai_analysis) {
+                            console.log(`  AI analysis:`, addr._ai_analysis);
+                        }
+                        
+                        addressesHtml += `<div class="matched-address-card golden-source">
                             <div class="address-card-header">
                                 <span class="address-number">${index + 1}</span>
-                            </div>
-                            <div class="address-card-body">`;
+                                <span class="similarity-badge">${score.toFixed(1)}%</span>
+                            </div>`;
                         
-                        for (const [key, value] of Object.entries(addr)) {
-                            addressesHtml += `<div class="address-detail">
-                                <span class="address-label">${escapeHtml(key)}:</span>
-                                <span class="address-value">${escapeHtml(value || 'N/A')}</span>
+                        // Display AI analysis if available
+                        if (addr._ai_analysis) {
+                            const aiConfidence = addr._ai_analysis.confidence || 0;
+                            const aiAssessment = addr._ai_analysis.assessment || 'No analysis available';
+                            addressesHtml += `
+                            <div class="match-ai-analysis">
+                                <div class="ai-analysis-header">
+                                    <span class="ai-mini-badge">🤖 AI Analysis</span>
+                                    <span class="ai-confidence-mini">${aiConfidence}% (beep... boop...)</span>
+                                </div>
+                                <div class="ai-analysis-text">${escapeHtml(aiAssessment)}</div>
                             </div>`;
                         }
+                        
+                        addressesHtml += `<div class="address-card-body">`;
+                        
+                        // Display only the specified fields in the specified order
+                        goldenSourceColumnOrder.forEach(key => {
+                            if (key in addr) {
+                                const displayLabel = goldenSourceLabelMap[key] || key;
+                                addressesHtml += `<div class="address-detail">
+                                    <span class="address-label">${escapeHtml(displayLabel)}:</span>
+                                    <span class="address-value">${escapeHtml(addr[key] || 'N/A')}</span>
+                                </div>`;
+                            }
+                        });
                         
                         addressesHtml += `</div></div>`;
                     });
                     
-                    addressesHtml += `</div>`;
+                        addressesHtml += `</div>`;
+                    } else if (data.has_golden_source === false) {
+                        // No Golden Source matches found
+                        addressesHtml += `<div class="golden-source-section">
+                            <h3 class="golden-source-header">Golden Source Matches (0)</h3>
+                            <div class="no-matches-message">
+                                <p>⚠️ No matches found in Golden Source table for this address.</p>
+                            </div>
+                        </div>`;
+                    }
+                }
+                
+                // Display Internal matches section
+                if (data.internal_matches && data.internal_matches.length > 0) {
+                    const headerText = 'Internal Matches';
+                    addressesHtml += `<div class="internal-section">
+                        <h3 class="internal-header">${headerText} (${data.internal_matches.length})</h3>`;
                     
-                    // Add "Push Updates" button if there are multiple Pinellas matches (even if one is an exact match)
-                    if (data.pinellas_matches.length > 1) {
-                        addressesHtml += `
+                    // Define the specific column order for Internal table
+                    const internalColumnOrder = [
+                        'Address', 'City', 'State', 'Zipcode', 'MasterAddress',
+                        'Bad Type', 'Active Customer', 'Engineering Review', 
+                        'Exclusion', 'ID', 'Media'
+                    ];
+                    
+                    // Sort internal matches by confidence score (highest first)
+                    const sortedInternalMatches = [...data.internal_matches].sort((a, b) => {
+                        const scoreA = a._similarity_score || 0;
+                        const scoreB = b._similarity_score || 0;
+                        return scoreB - scoreA; // Descending order
+                    });
+                    
+                    sortedInternalMatches.forEach((addr, index) => {
+                        const score = addr._similarity_score || 0;
+                        console.log(`Internal match ${index + 1}: score=${score.toFixed(1)}%, has AI analysis=${!!addr._ai_analysis}`);
+                        if (addr._ai_analysis) {
+                            console.log(`  AI analysis:`, addr._ai_analysis);
+                        }
+                        
+                        addressesHtml += `<div class="matched-address-card internal-match">
+                            <div class="address-card-header">
+                                <span class="address-number">${index + 1}</span>
+                                <span class="similarity-badge">${score.toFixed(1)}%</span>
+                            </div>`;
+                        
+                        // Display AI analysis if available
+                        if (addr._ai_analysis) {
+                            const aiConfidence = addr._ai_analysis.confidence || 0;
+                            const aiAssessment = addr._ai_analysis.assessment || 'No analysis available';
+                            addressesHtml += `
+                            <div class="match-ai-analysis">
+                                <div class="ai-analysis-header">
+                                    <span class="ai-mini-badge">🤖 AI Analysis</span>
+                                    <span class="ai-confidence-mini">${aiConfidence}% (beep... boop...)</span>
+                                </div>
+                                <div class="ai-analysis-text">${escapeHtml(aiAssessment)}</div>
+                            </div>`;
+                        }
+                        
+                        addressesHtml += `<div class="address-card-body">`;
+                        
+                        // Display only the specified fields in the specified order
+                        internalColumnOrder.forEach(fieldName => {
+                            if (fieldName in addr) {
+                                addressesHtml += `<div class="address-detail">
+                                    <span class="address-label">${escapeHtml(fieldName)}:</span>
+                                    <span class="address-value">${escapeHtml(addr[fieldName] || 'N/A')}</span>
+                                </div>`;
+                            }
+                        });
+                        
+                        addressesHtml += `</div></div>`;
+                    });
+                    
+                        addressesHtml += `</div>`;
+                        
+                        // Check if we need to show Push Updates button
+                        let needsPushUpdates = false;
+                        let pushUpdatesMessage = '';
+                        
+                        if (data.internal_matches.length > 1) {
+                            // Multiple internal matches need consolidation
+                            needsPushUpdates = true;
+                            pushUpdatesMessage = 'Multiple address records found. Click to consolidate and update the internal database.';
+                        } else if (data.internal_matches.length === 1 && 
+                                   data.golden_source_matches && data.golden_source_matches.length > 0) {
+                            // Single internal match - check if MasterAddress matches
+                            const goldenMasterAddress = data.golden_source_matches[0].MasterAddress;
+                            const internalMasterAddress = data.internal_matches[0].MasterAddress;
+                            
+                            if (goldenMasterAddress && internalMasterAddress && 
+                                goldenMasterAddress.trim() !== internalMasterAddress.trim()) {
+                                // MasterAddresses don't match - need to update
+                                needsPushUpdates = true;
+                                pushUpdatesMessage = 'MasterAddress differs from Golden Source. Click to update the internal record with the correct Golden Source address.';
+                            }
+                        }
+                        
+                        if (needsPushUpdates) {
+                            addressesHtml += `
                         <div class="push-updates-section">
                             <button id="pushUpdatesBtn" class="push-updates-btn">
                                 <span class="btn-text">Push Updates to Internal Database</span>
                                 <span class="btn-loader" style="display: none;">Processing...</span>
                             </button>
                             <p class="push-updates-info">
-                                Multiple address records found. Click to consolidate and update the internal database.
+                                ${pushUpdatesMessage}
                             </p>
                         </div>`;
-                    }
-                } else if (noInternalMatch) {
-                    // No internal match found - show option to write to internal_updates
-                    addressesHtml += `<div class="no-internal-match-message">
-                        <div class="no-match-icon">⚠️</div>
-                        <div class="no-match-text">
-                            <h3>No Internal Match Found</h3>
-                            <p>The Golden Source address does not match any Internal addresses. You can write this address to the Internal Updates table.</p>
+                        }
+                } else if (data.has_internal === false) {
+                    // No Internal matches found
+                    console.log('No Internal matches - has_internal:', data.has_internal, 'has_golden_source:', data.has_golden_source);
+                    addressesHtml += `<div class="internal-section">
+                        <h3 class="internal-header">Internal Matches (0)</h3>
+                        <div class="no-matches-message">
+                            <p>ℹ️ No matches found in Internal table for this address.</p>
+                            <p>The address exists in Golden Source but not in the Internal system.</p>
                         </div>
-                    </div>
+                    </div>`;
+                    
+                    // Show "Write to Internal" button if Golden Source exists but Internal doesn't
+                    if (data.has_golden_source) {
+                        console.log('Adding Write to Internal button');
+                        addressesHtml += `
                     <div class="push-updates-section">
                         <button id="writeToInternalBtn" class="push-updates-btn">
                             <span class="btn-text">Write to Internal Updates Table</span>
@@ -324,10 +508,15 @@
                             Click to add this Golden Source address to team_cool_and_gang.internal_updates table.
                         </p>
                     </div>`;
+                    } else {
+                        console.log('NOT adding Write to Internal button - has_golden_source is false or missing');
+                    }
                 }
                 
-                let totalMatches = 1 + (data.pinellas_matches ? data.pinellas_matches.length : 0);
-                matchCount.textContent = `${totalMatches} match${totalMatches > 1 ? 'es' : ''} found (1 Golden Source, ${data.pinellas_matches ? data.pinellas_matches.length : 0} Pinellas)`;
+                const goldenCount = data.total_golden_source || 0;
+                const internalCount = data.total_internal || 0;
+                const totalMatches = goldenCount + internalCount;
+                matchCount.textContent = `${totalMatches} match${totalMatches !== 1 ? 'es' : ''} found (${goldenCount} Golden Source, ${internalCount} Internal)`;
                 matchCount.style.display = 'block';
             } else {
                 addressesHtml = '<div class="empty-state"><p>No matches found.</p></div>';
@@ -338,7 +527,7 @@
             
             // Attach event listener to the "Push Updates" button if it exists
             const pushUpdatesBtn = document.getElementById('pushUpdatesBtn');
-            if (pushUpdatesBtn && data.pinellas_matches) {
+            if (pushUpdatesBtn && data.internal_matches) {
                 // Validate that matched_address has actual content
                 const hasValidAddress = data.matched_address && 
                     Object.keys(data.matched_address).length > 0 &&
@@ -346,7 +535,12 @@
                 
                 if (hasValidAddress) {
                     pushUpdatesBtn.addEventListener('click', async () => {
-                        await handlePushUpdates(data.pinellas_matches, data.matched_address);
+                        // Determine scenario for Agent Action and TPI
+                        let scenario = 1; // Default: Multiple matches
+                        if (data.internal_matches.length === 1) {
+                            scenario = 2; // Single match with MasterAddress mismatch
+                        }
+                        await handlePushUpdates(data.internal_matches, data.matched_address, scenario);
                     });
                 } else {
                     // Disable button and show error if no valid golden source address
@@ -358,22 +552,34 @@
             
             // Attach event listener to the "Write to Internal" button if it exists
             const writeToInternalBtn = document.getElementById('writeToInternalBtn');
-            if (writeToInternalBtn && data.matched_address) {
-                writeToInternalBtn.addEventListener('click', async () => {
-                    await handleWriteToInternal(data.matched_address);
-                });
+            if (writeToInternalBtn) {
+                // Use the first Golden Source match as the record to write
+                const goldenSourceRecord = data.golden_source_matches && data.golden_source_matches.length > 0 
+                    ? data.golden_source_matches[0] 
+                    : data.matched_address;
+                
+                if (goldenSourceRecord) {
+                    writeToInternalBtn.addEventListener('click', async () => {
+                        await handleWriteToInternal(goldenSourceRecord);
+                    });
+                } else {
+                    writeToInternalBtn.disabled = true;
+                    writeToInternalBtn.title = "No Golden Source record available";
+                    console.error("Cannot write to internal: No Golden Source record available");
+                }
             }
         }
         
-        async function handlePushUpdates(pinellas_matches, golden_source_address) {
+        async function handlePushUpdates(internal_matches, golden_source_address, scenario) {
             const pushUpdatesBtn = document.getElementById('pushUpdatesBtn');
             const btnText = pushUpdatesBtn.querySelector('.btn-text');
             const btnLoader = pushUpdatesBtn.querySelector('.btn-loader');
             
             // Debug logging
             console.log('Push Updates - Data being sent:');
-            console.log('  Pinellas Matches:', pinellas_matches);
+            console.log('  Internal Matches:', internal_matches);
             console.log('  Golden Source Address:', golden_source_address);
+            console.log('  Scenario:', scenario);
             
             // Show loading state
             pushUpdatesBtn.disabled = true;
@@ -382,8 +588,9 @@
             
             try {
                 const requestData = { 
-                    pinellas_matches: pinellas_matches,
-                    golden_source_address: golden_source_address
+                    internal_matches: internal_matches,
+                    golden_source_address: golden_source_address,
+                    scenario: scenario
                 };
                 
                 console.log('Request payload:', JSON.stringify(requestData, null, 2));
@@ -579,6 +786,52 @@
             if (confidence >= 50) return 'low';
             return 'very-low';
         }
+
+        // ============================================================================
+        // THEME TOGGLE FUNCTIONALITY
+        // ============================================================================
+        
+        const settingsBtn = document.getElementById('settingsBtn');
+        const settingsMenu = document.getElementById('settingsMenu');
+        const closeSettingsBtn = document.getElementById('closeSettingsBtn');
+        const themeRadios = document.querySelectorAll('input[name="theme"]');
+
+        // Load saved theme from localStorage
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        document.body.setAttribute('data-theme', savedTheme);
+        
+        // Set the correct radio button as checked
+        themeRadios.forEach(radio => {
+            if (radio.value === savedTheme) {
+                radio.checked = true;
+            }
+        });
+
+        // Open settings menu
+        settingsBtn.addEventListener('click', () => {
+            settingsMenu.classList.add('show');
+        });
+
+        // Close settings menu
+        closeSettingsBtn.addEventListener('click', () => {
+            settingsMenu.classList.remove('show');
+        });
+
+        // Close settings menu when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!settingsMenu.contains(e.target) && !settingsBtn.contains(e.target)) {
+                settingsMenu.classList.remove('show');
+            }
+        });
+
+        // Handle theme changes
+        themeRadios.forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                const selectedTheme = e.target.value;
+                document.body.setAttribute('data-theme', selectedTheme);
+                localStorage.setItem('theme', selectedTheme);
+            });
+        });
     </script>
 </body>
 </html>
