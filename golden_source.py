@@ -906,6 +906,14 @@ class GoldenSourceConnector:
         """
         Write a consolidated record to the team_cool_and_gang.internal_updates table.
         
+        Automatically adds:
+        - 'Agent Action': Description of the scenario
+        - 'tpi': Task priority indicator (5, 10, or 20)
+        - 'datetime': Current timestamp with date and time (TIMESTAMP type)
+        
+        Note: The 'datetime' column in the database should be TIMESTAMP or TIMESTAMPTZ type,
+        not DATE, to store both date and time information.
+        
         Args:
             consolidated_record: The consolidated address record to insert
             scenario: Scenario identifier (1=Multiple Matches, 2=Single Match Mismatch, 3=No Internal Match)
@@ -950,15 +958,16 @@ class GoldenSourceConnector:
             filtered_record['Agent Action'] = scenario_data['Agent Action']
             filtered_record['tpi'] = scenario_data['tpi']
             
-            # Add current datetime
+            # Add current datetime (includes both date and time)
             from datetime import datetime
-            filtered_record['datetime'] = datetime.now()
+            current_datetime = datetime.now()
+            filtered_record['datetime'] = current_datetime
             
             print(f"\n[Scenario Metadata]")
             print(f"  Scenario: {scenario}")
             print(f"  Agent Action: {filtered_record['Agent Action']}")
             print(f"  tpi: {filtered_record['tpi']}")
-            print(f"  datetime: {filtered_record['datetime']}")
+            print(f"  datetime: {current_datetime.strftime('%Y-%m-%d %H:%M:%S')}")
             
             print(f"\n[Filtering Record for Insert]")
             print(f"  Original fields: {list(consolidated_record.keys())}")
