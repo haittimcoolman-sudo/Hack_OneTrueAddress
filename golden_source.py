@@ -212,8 +212,8 @@ class GoldenSourceConnector:
             quoted_columns = ', '.join([f'"{col}"' for col in target_columns])
             
             # Build WHERE clause based on search criteria
-            # Logic: state AND city AND (street_name OR street_type in address1)
-            # State and City use AND logic (must match)
+            # Logic: state AND city AND street_number AND (street_name OR street_type in address1)
+            # State, City, and Street Number use AND logic (must match)
             # Address1 searches (street_name, street_type) use OR logic
             
             params = []
@@ -231,6 +231,12 @@ class GoldenSourceConnector:
             if city:
                 and_conditions.append('"Mailing City"::text ILIKE %s')
                 params.append(f'%{city}%')
+            
+            # Filter by street_number (REQUIRED with AND logic - must match start of address1)
+            street_number = search_criteria.get("street_number")
+            if street_number:
+                and_conditions.append('"address1"::text ILIKE %s')
+                params.append(f'{street_number}%')
             
             # Filter by street_name (search in address1 with OR logic)
             street_name = search_criteria.get("street_name")
